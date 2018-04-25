@@ -26,13 +26,11 @@ typedef struct response_packet
 	uint8_t nb_hops;
 } response ;
 
-struct node_unicast;
-typedef struct node_unicast{
+struct parent_unicast;
+typedef struct parent_unicast{
 	rimeaddr_t addr;
-	uint8_t nb_hops;
-} node;
-
-node parent;
+	uint8_t nb_hops = 254;
+} parent;
 /*---------------------------------------------------------------------------*/
 
 static void
@@ -54,13 +52,7 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 	 from->u8[0], from->u8[1], seqno);
 
 	//Received a response from my broadcast, should compare number of hops and override
-	node tmp = packetbuf_dataptr();
-	if(parent->nb_hops > tmp->nb_hops){
-		parent->addr.u8[0] = tmp->addr.u8[0];
-		parent->addr.u8[1] = tmp->addr.u8[1];		
-		parent->nb_hops = tmp->nb_hops;
-		// 
-	}
+	if(
 }
 static void
 sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
