@@ -33,20 +33,14 @@ typedef struct node_unicast{
 } node;
 
 node parent;
-parent->addr->u8[0] = 0;
-parent->addr->u8[1] = 0;
+parent->addr.u8[0] = 0;
+parent.addr->u8[1] = 0;
+
+node me;
+me->addr->u8[0] = rimeaddr_node_addr.u8[0];
+me->addr->u8[1] = rimeaddr_node_addr.u8[1];
 /*---------------------------------------------------------------------------*/
 
-static void
-broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
-{
-  printf("broadcast message received from %d.%d: '%s'\n",
-         from->u8[0], from->u8[1], (char *)packetbuf_dataptr());
-
-	// Check if I have a parent and if yes I open a unicast and send response 
-}
-static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
-static struct broadcast_conn broadcast;
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -57,10 +51,11 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 
 	//Received a response from my broadcast, should compare number of hops and override
 	node tmp = packetbuf_dataptr();
-	if(parent->nb_hops > tmp->nb_hops){
-		parent->addr.u8[0] = tmp->addr.u8[0];
-		parent->addr.u8[1] = tmp->addr.u8[1];		
-		parent->nb_hops = tmp->nb_hops;
+	if(parent.nb_hops > tmp.nb_hops){
+		parent.addr.u8[0] = tmp.addr.u8[0];
+		parent.addr.u8[1] = tmp.addr.u8[1];		
+		parent.nb_hops = tmp.nb_hops;
+		printf("Change parent to %d.%d with %d hop", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
 		// 
 	}
 }
@@ -91,10 +86,9 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 
 	// Check if I have a parent and if yes I open a unicast and send response
 	//rimeaddr_t empty;
-	if(parent->u8[0] == 0){
+	if(parent.addr.u8[0] != 0){
 		rimeaddr_t recv;
-		node temp;
-		packetbuf_copyfrom(&parent, sizeof(parent));
+		packetbuf_copyfrom(&me, sizeof(me));
       		recv.u8[0] = from->u8[0];
       		recv.u8[1] = from->u8[1];
 		runicast_send(&runicast, &recv, MAX_RETRANSMISSIONS);
@@ -117,8 +111,9 @@ static struct broadcast_conn broadcast;
 static void
 broadcast_while_no_parent()
 {
+	static struct etimer et;
 	broadcast_open(&broadcast, 129, &broadcast_call);
-	while(parent->u8[0] == 0) {
+	while(parent.addr.u8[0] == 0  && parent.addr.u8[1] == 0) {
 
 		/* Delay 2-4 seconds */
 		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
@@ -141,6 +136,6 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_BEGIN();
 	runicast_open(&runicast, 144, &runicast_callbacks);
-	broadcast_while_no_parent()
+	broadcast_while_no_parent();
 	PROCESS_END();	
 }
