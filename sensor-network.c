@@ -13,6 +13,7 @@
 
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
+#define USE_RSSI 0
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network_process, "Sensor network implementation");
@@ -30,11 +31,10 @@ struct node_unicast;
 typedef struct node_unicast{
 	rimeaddr_t addr;
 	uint8_t nb_hops;
+	uint16_t rssi;
 } node;
 
 node parent ;
-
-
 node me;
 
 /*---------------------------------------------------------------------------*/
@@ -48,10 +48,13 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 	 from->u8[0], from->u8[1], seqno);
 
 	//Received a response from my broadcast, should compare number of hops and override
+	uint16_t last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+	printf("RSSI : %d\n", last_rssi);
 	char * payload = (char *)  packetbuf_dataptr();
 	printf("Payload received : %s\n", payload);
 	uint8_t nb_hop = (uint8_t) atoi(payload);
-	if(parent.nb_hops >  nb_hop){
+	
+	if(USE_RSSI == 0 && parent.nb_hops >  nb_hop){
 		parent.addr.u8[0] = from->u8[0];
 		parent.addr.u8[1] = from->u8[1];		
 		parent.nb_hops = nb_hop;
@@ -59,6 +62,11 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 		me.nb_hops = nb_hop + 1;
 		printf("Change parent to %d.%d with %d hop\n", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
 		// 
+	}else if (USE_RSSI == 1 && last_rssi > parent.rssi){
+		parent.addr.u8[0] = from->u8[0];
+		parent.addr.u8[1] = from->u8[1];
+		parent.rssi = last_rssi;
+		printf("Change parent to %d.%d with %d rssi\n", parent.addr.u8[0],parent.addr.u8[1],parent.rssi);
 	}
 }
 static void
@@ -89,6 +97,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 	// Check if I have a parent and if yes I open a unicast and send response
 	//rimeaddr_t empty;
 	if(parent.addr.u8[0] != 0){
+		printf("I have a parent and received broadcast");
 		rimeaddr_t recv;
 		char *nb_hop;
 		sprintf(nb_hop, "%d", me.nb_hops);
@@ -123,6 +132,7 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 
 	parent.addr.u8[0] = 0;
 	parent.addr.u8[1] = 0;
+	parent.rssi = -65534;
 	parent.nb_hops = 254;	
 
 	me.addr.u8[0] = rimeaddr_node_addr.u8[0];
