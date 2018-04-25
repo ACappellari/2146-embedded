@@ -32,9 +32,6 @@ typedef struct node_unicast{
 	uint8_t nb_hops;
 } node;
 
-node parent ;
-
-
 node me;
 
 /*---------------------------------------------------------------------------*/
@@ -70,8 +67,8 @@ static struct runicast_conn runicast;
 static void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 {
-	  printf("I A M ROOT, broadcast message received from %d.%d: '%s'\n",
-		 from->u8[0], from->u8[1], (char *)packetbuf_dataptr());
+	printf("I A M ROOT, broadcast message received from %d.%d: '%s'\n",
+	from->u8[0], from->u8[1], (char *)packetbuf_dataptr());
 
 	rimeaddr_t recv;
 	packetbuf_copyfrom("0", 1);
@@ -103,9 +100,6 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_BEGIN();
 
-	parent.addr.u8[0] = 0;
-	parent.addr.u8[1] = 0;
-
 	me.addr.u8[0] = rimeaddr_node_addr.u8[0];
 	me.addr.u8[1] = rimeaddr_node_addr.u8[1];
 	me.nb_hops = 0;
@@ -115,7 +109,6 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	static struct etimer et;
 
 	broadcast_open(&broadcast, 129, &broadcast_call);
-
 
 	PROCESS_END();	
 }

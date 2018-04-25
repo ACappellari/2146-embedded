@@ -56,7 +56,6 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 		parent.addr.u8[1] = from->u8[1];		
 		parent.nb_hops = nb_hop;
 		uint8_t tmp = nb_hop + 1;
-		printf("Received hop : %d, set my hops to %d",nb_hop,tmp);
 		me.nb_hops = nb_hop + 1;
 		printf("Change parent to %d.%d with %d hop\n", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
 		// 
@@ -72,8 +71,11 @@ sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmiss
 static void
 timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
 {
-  printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+  	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
 	 to->u8[0], to->u8[1], retransmissions);
+	
+	parent.addr.u8[0] = 0;
+	parent.nb_hops = 254;
 }
 static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     sent_runicast,
@@ -87,7 +89,6 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 	// Check if I have a parent and if yes I open a unicast and send response
 	//rimeaddr_t empty;
 	if(parent.addr.u8[0] != 0){
-		printf("Broadcast received, I have a parent\n");
 		rimeaddr_t recv;
 		char *nb_hop;
 		sprintf(nb_hop, "%d", me.nb_hops);
@@ -135,7 +136,7 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	broadcast_open(&broadcast, 129, &broadcast_call);
 
 	BROADCAST:while(parent.addr.u8[0] == 0  && parent.addr.u8[1] == 0) {
-
+		printf("Broadcasting\n");
 		/* Delay 2-4 seconds */
 		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
 
@@ -145,9 +146,25 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 		broadcast_send(&broadcast);
 		//printf("broadcast message sent\n");
 	}
-	printf("Leave broadcast sending");
+	printf("Stopped Broadcasting\n");
 
-	//goto BROADCAST;
+	while(parent.addr.u8[0] != 0)
+	{
+		/* Delay 2-4 seconds */
+		/*etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+
+		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+		
+		rimeaddr_t recv;
+		packetbuf_copyfrom("254", sizeof("254"));
+      		recv.u8[0] = parent.addr.u8[0];
+      		recv.u8[1] = parent.addr.u8[1];
+		runicast_send(&runicast, &recv, MAX_RETRANSMISSIONS);*/
+		
+	}
+	
+	
+	goto BROADCAST;
 
 	PROCESS_END();	
 }

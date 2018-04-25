@@ -70,7 +70,7 @@ static struct runicast_conn runicast;
 static void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 {
-	  printf("broadcast message received from %d.%d: '%s'\n",
+	  printf("I A M ROOT, broadcast message received from %d.%d: '%s'\n",
 		 from->u8[0], from->u8[1], (char *)packetbuf_dataptr());
 
 	rimeaddr_t recv;
