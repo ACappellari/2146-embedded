@@ -49,12 +49,14 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 
 	//Received a response from my broadcast, should compare number of hops and override
 	char * payload = (char *)  packetbuf_dataptr();
+	printf("Payload received : %s\n", payload);
 	uint8_t nb_hop = (uint8_t) atoi(payload);
-	printf("NB HOPS receives : %d\n", nb_hop);
 	if(parent.nb_hops >  nb_hop){
 		parent.addr.u8[0] = from->u8[0];
 		parent.addr.u8[1] = from->u8[1];		
 		parent.nb_hops = nb_hop;
+		uint8_t tmp = nb_hop + 1;
+		printf("Received hop : %d, set my hops to %d",nb_hop,tmp);
 		me.nb_hops = nb_hop + 1;
 		printf("Change parent to %d.%d with %d hop\n", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
 		// 
@@ -82,17 +84,14 @@ static struct runicast_conn runicast;
 static void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 {
-  /*printf("broadcast message received from %d.%d: '%s'\n",
-         from->u8[0], from->u8[1], (char *)packetbuf_dataptr());*/
-
 	// Check if I have a parent and if yes I open a unicast and send response
 	//rimeaddr_t empty;
 	if(parent.addr.u8[0] != 0){
-		printf("I have a parent and I start unicast\n");
+		printf("Broadcast received, I have a parent\n");
 		rimeaddr_t recv;
 		char *nb_hop;
 		sprintf(nb_hop, "%d", me.nb_hops);
-		packetbuf_copyfrom(&nb_hop, sizeof(nb_hop));
+		packetbuf_copyfrom(nb_hop, sizeof(nb_hop));
       		recv.u8[0] = from->u8[0];
       		recv.u8[1] = from->u8[1];
 		runicast_send(&runicast, &recv, MAX_RETRANSMISSIONS);
@@ -143,10 +142,10 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 		
 		// Send packet looking for a parent with your id
-		packetbuf_copyfrom("Hello", 6);
 		broadcast_send(&broadcast);
 		//printf("broadcast message sent\n");
 	}
+	printf("Leave broadcast sending");
 
 	//goto BROADCAST;
 
