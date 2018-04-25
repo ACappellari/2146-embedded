@@ -33,6 +33,8 @@ typedef struct node_unicast{
 } node;
 
 node parent;
+parent->u8[0] = 0;
+parent->u8[1] = 0;
 /*---------------------------------------------------------------------------*/
 
 static void
@@ -88,8 +90,8 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
          from->u8[0], from->u8[1], (char *)packetbuf_dataptr());
 
 	// Check if I have a parent and if yes I open a unicast and send response
-	rimeaddr_t empty;
-	if(rimeaddr_cmp(parent->addr, empty) != 0){
+	//rimeaddr_t empty;
+	if(parent->u8[0] == 0){
 		rimeaddr_t recv;
 		packetbuf_copyfrom(&parent, sizeof(parent));
       		recv.u8[0] = from->u8[0];
@@ -97,6 +99,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 		runicast_send(&runicast, &recv, MAX_RETRANSMISSIONS);
 	}
 }
+
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
 static struct broadcast_conn broadcast;
 
@@ -114,7 +117,7 @@ static void
 broadcast_while_no_parent()
 {
 	broadcast_open(&broadcast, 129, &broadcast_call);
-	while(parent == null) {
+	while(parent->u8[0] == 0) {
 
 		/* Delay 2-4 seconds */
 		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
