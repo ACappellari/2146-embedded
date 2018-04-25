@@ -33,8 +33,8 @@ typedef struct node_unicast{
 } node;
 
 node parent;
-parent->u8[0] = 0;
-parent->u8[1] = 0;
+parent->addr->u8[0] = 0;
+parent->addr->u8[1] = 0;
 /*---------------------------------------------------------------------------*/
 
 static void
@@ -93,6 +93,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 	//rimeaddr_t empty;
 	if(parent->u8[0] == 0){
 		rimeaddr_t recv;
+		node temp;
 		packetbuf_copyfrom(&parent, sizeof(parent));
       		recv.u8[0] = from->u8[0];
       		recv.u8[1] = from->u8[1];
