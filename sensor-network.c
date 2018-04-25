@@ -37,7 +37,7 @@ parent->addr.u8[0] = 0;
 parent.addr->u8[1] = 0;
 
 node me;
-me->addr->u8[0] = rimeaddr_node_addr.u8[0];
+me.addr.u8[0] = rimeaddr_node_addr.u8[0];
 me->addr->u8[1] = rimeaddr_node_addr.u8[1];
 /*---------------------------------------------------------------------------*/
 
@@ -50,11 +50,12 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 	 from->u8[0], from->u8[1], seqno);
 
 	//Received a response from my broadcast, should compare number of hops and override
-	node tmp = packetbuf_dataptr();
-	if(parent.nb_hops > tmp.nb_hops){
-		parent.addr.u8[0] = tmp.addr.u8[0];
-		parent.addr.u8[1] = tmp.addr.u8[1];		
-		parent.nb_hops = tmp.nb_hops;
+	char * nbhop = (char *)  packetbuf_dataptr();
+	uint8_t nbhops = (uint8_t) *nbhop;
+	if(parent.nb_hops >  nbhops){
+		parent.addr.u8[0] = from->u8[0];
+		parent.addr.u8[1] = from->u8[1];		
+		parent.nb_hops = nbhops;
 		printf("Change parent to %d.%d with %d hop", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
 		// 
 	}
@@ -88,7 +89,9 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 	//rimeaddr_t empty;
 	if(parent.addr.u8[0] != 0){
 		rimeaddr_t recv;
-		packetbuf_copyfrom(&me, sizeof(me));
+		char *nbhop;
+		sprintf(nbhop, "%d", me.nb_hops);
+		packetbuf_copyfrom(&nbhop, sizeof(nbhop));
       		recv.u8[0] = from->u8[0];
       		recv.u8[1] = from->u8[1];
 		runicast_send(&runicast, &recv, MAX_RETRANSMISSIONS);
@@ -118,7 +121,7 @@ broadcast_while_no_parent()
 		/* Delay 2-4 seconds */
 		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
 
-		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+		//PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 		
 		// Send packet looking for a parent with your id
 		packetbuf_copyfrom("Hello", 6);
