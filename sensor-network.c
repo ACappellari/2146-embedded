@@ -32,13 +32,11 @@ typedef struct node_unicast{
 	uint8_t nb_hops;
 } node;
 
-node parent;
-parent->addr.u8[0] = 0;
-parent.addr->u8[1] = 0;
+node parent ;
+
 
 node me;
-me.addr.u8[0] = rimeaddr_node_addr.u8[0];
-me->addr->u8[1] = rimeaddr_node_addr.u8[1];
+
 /*---------------------------------------------------------------------------*/
 
 
@@ -50,8 +48,8 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 	 from->u8[0], from->u8[1], seqno);
 
 	//Received a response from my broadcast, should compare number of hops and override
-	char * nbhop = (char *)  packetbuf_dataptr();
-	uint8_t nbhops = (uint8_t) *nbhop;
+	char * payload = (char *)  packetbuf_dataptr();
+	uint8_t nbhops = (uint8_t) *payload;
 	if(parent.nb_hops >  nbhops){
 		parent.addr.u8[0] = from->u8[0];
 		parent.addr.u8[1] = from->u8[1];		
@@ -88,6 +86,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 	// Check if I have a parent and if yes I open a unicast and send response
 	//rimeaddr_t empty;
 	if(parent.addr.u8[0] != 0){
+		printf("I have a parent and I start unicast");
 		rimeaddr_t recv;
 		char *nbhop;
 		sprintf(nbhop, "%d", me.nb_hops);
@@ -114,21 +113,7 @@ static struct broadcast_conn broadcast;
 static void
 broadcast_while_no_parent()
 {
-	static struct etimer et;
-	broadcast_open(&broadcast, 129, &broadcast_call);
-	while(parent.addr.u8[0] == 0  && parent.addr.u8[1] == 0) {
 
-		/* Delay 2-4 seconds */
-		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
-
-		//PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-		
-		// Send packet looking for a parent with your id
-		packetbuf_copyfrom("Hello", 6);
-		broadcast_send(&broadcast);
-		printf("broadcast message sent\n");
-	}
-	broadcast_close(&broadcast);
 }
 
 PROCESS_THREAD(sensor_network_process, ev, data)
@@ -138,7 +123,35 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_BEGIN();
+
+	parent.addr.u8[0] = 0;
+	parent.addr.u8[1] = 0;
+
+	me.addr.u8[0] = rimeaddr_node_addr.u8[0];
+	me.addr.u8[1] = rimeaddr_node_addr.u8[1];
+
 	runicast_open(&runicast, 144, &runicast_callbacks);
-	broadcast_while_no_parent();
+
+	static struct etimer et;
+
+	broadcast_open(&broadcast, 129, &broadcast_call);
+
+	BROADCAST:while(parent.addr.u8[0] == 0  && parent.addr.u8[1] == 0) {
+
+		/* Delay 2-4 seconds */
+		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+
+		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+		
+		// Send packet looking for a parent with your id
+		packetbuf_copyfrom("Hello", 6);
+		broadcast_send(&broadcast);
+		printf("broadcast message sent\n");
+	}
+	broadcast_close(&broadcast);
+	
+
+	goto BROADCAST;
+
 	PROCESS_END();	
 }
