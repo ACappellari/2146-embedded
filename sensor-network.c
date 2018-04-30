@@ -95,9 +95,10 @@ static void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 {
 	// Check if I have a parent and if yes I open a unicast and send response
-	//rimeaddr_t empty;
 	if(parent.addr.u8[0] != 0){
-		printf("I have a parent and received broadcast");
+		printf("I have a parent and received broadcast\n");
+		while(runicast_is_transmitting(&runicast)){}
+		printf("Entered unicast send preparation\n");		
 		rimeaddr_t recv;
 		char *nb_hop;
 		sprintf(nb_hop, "%d", me.nb_hops);
@@ -105,6 +106,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
       		recv.u8[0] = from->u8[0];
       		recv.u8[1] = from->u8[1];
 		runicast_send(&runicast, &recv, MAX_RETRANSMISSIONS);
+		printf("Left unicast send\n");
 	}
 }
 
@@ -146,20 +148,20 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	broadcast_open(&broadcast, 129, &broadcast_call);
 
 	BROADCAST:while(parent.addr.u8[0] == 0  && parent.addr.u8[1] == 0) {
-		printf("Broadcasting\n");
+		printf("LOOP start\n");
 		/* Delay 2-4 seconds */
 		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
 
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 		
 		// Send packet looking for a parent with your id
+		printf("Broadcast sent\n");
 		broadcast_send(&broadcast);
-		//printf("broadcast message sent\n");
 	}
-	printf("Stopped Broadcasting\n");
 
 	while(parent.addr.u8[0] != 0)
 	{
+		PROCESS_WAIT_EVENT_UNTIL(0);
 		/* Delay 2-4 seconds */
 		/*etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
 
