@@ -11,7 +11,7 @@
 #include <stdlib.h>
 
 
-#define MAX_RETRANSMISSIONS 4
+#define MAX_RETRANSMISSIONS 8
 #define NUM_HISTORY_ENTRIES 4
 #define USE_RSSI 0
 

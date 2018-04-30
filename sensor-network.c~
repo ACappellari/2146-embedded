@@ -97,7 +97,7 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 	// Check if I have a parent and if yes I open a unicast and send response
 	if(parent.addr.u8[0] != 0){
 		printf("I have a parent and received broadcast\n");
-		while(!runicast_is_transmitting(&runicast)){}
+		while(runicast_is_transmitting(&runicast)){}
 		printf("Entered unicast send preparation\n");		
 		rimeaddr_t recv;
 		char *nb_hop;
