@@ -27,6 +27,10 @@ public class Publisher {
 		client.disconnect();
 
 		System.out.println("== END PUBLISHER ==");
+		private Process serialDumpProcess;
+		while(1){
+			serialDumpProcess = Runtime.getRuntime().exec("./tools/sky/serialdump-linux");
+		}
 
 	}
 
