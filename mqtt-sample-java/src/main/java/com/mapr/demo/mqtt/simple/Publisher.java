@@ -49,30 +49,27 @@ public class Publisher extends Thread {
 			System.out.println("Waiting for client on port " + serverSocket.getLocalPort() + "...");
 			Socket server = serverSocket.accept();
 			System.out.println("Just connected to " + server.getRemoteSocketAddress());
+			PrintWriter out = new PrintWriter(server.getOutputStream());
+			BufferedReader in = new BufferedReader(new InputStreamReader(server.getInputStream()));
 			while (true) {
 				try {
-					BufferedReader in = new BufferedReader(new InputStreamReader(server.getInputStream()));
+					
 					String clientmsg = in.readLine();
 					System.out.println(clientmsg);
-					try {
+
 						mqttPublish(clientmsg);
-					} catch (MqttException e) {
-						System.out.println("Mqtt publish failed");
-						e.printStackTrace();
-					}
-					PrintWriter out = new PrintWriter(server.getOutputStream());
+	
+					
+					out.println("Thank you");
 				}
 
-				catch (SocketTimeoutException s) {
+				catch (IOException || MqttException s) {
 					System.out.println("Socket timed out!");
 					s.printStackTrace();
 					break;
 				}
 
-				catch (IOException e) {
-					e.printStackTrace();
-					break;
-				}
+
 			}
 			System.out.println("Thank you for connecting to " + server.getLocalSocketAddress() + "\nGoodbye!");
 			server.close();

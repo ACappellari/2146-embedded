@@ -12,7 +12,7 @@ import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
-public class Publisher extends Thread{
+public class Publisher extends Thread {
 
 	private ServerSocket serverSocket;
 	private MqttClient client;
@@ -43,39 +43,49 @@ public class Publisher extends Thread{
 	}
 
 	public void run() {
-				client = new MqttClient("tcp://localhost:1883", MqttClient.generateClientId());
-				client.connect();
-				System.out.println("Waiting for client on port " + serverSocket.getLocalPort() + "...");
-				Socket server = serverSocket.accept();
-				System.out.println("Just connected to " + server.getRemoteSocketAddress());
-		while (true) {
-			try {				
-				BufferedReader in = new BufferedReader(new InputStreamReader(server.getInputStream()));
-				String clientmsg = in.readLine();
-				System.out.println(clientmsg);
+		try {
+			client = new MqttClient("tcp://localhost:1883", MqttClient.generateClientId());
+			client.connect();
+			System.out.println("Waiting for client on port " + serverSocket.getLocalPort() + "...");
+			Socket server = serverSocket.accept();
+			System.out.println("Just connected to " + server.getRemoteSocketAddress());
+			PrintWriter out = new PrintWriter(server.getOutputStream());
+			BufferedReader in = new BufferedReader(new InputStreamReader(server.getInputStream()));
+			while (true) {
 				try {
-					mqttPublish(clientmsg);
-				} catch (MqttException e) {
-					System.out.println("Mqtt publish failed");
-					e.printStackTrace();
+					
+					String clientmsg = in.readLine();
+					System.out.println(clientmsg);
+
+						mqttPublish(clientmsg);
+	
+					
+					out.println("Thank you");
 				}
-				PrintWriter out = new PrintWriter(server.getOutputStream());
-			}
 
-			catch (SocketTimeoutException s) {
-				System.out.println("Socket timed out!");
-				s.printStackTrace();
-				break;
-			}
+				catch (SocketTimeoutException s) {
+					System.out.println("Socket timed out!");
+					s.printStackTrace();
+					break;
+				}
 
-			catch (IOException e) {
-				e.printStackTrace();
-				break;
+				catch (IOException e) {
+					e.printStackTrace();
+					break;
+				}
+				catch (MqttException e) {
+						System.out.println("Mqtt publish failed");
+						e.printStackTrace();
+					}
+
+
 			}
+			System.out.println("Thank you for connecting to " + server.getLocalSocketAddress() + "\nGoodbye!");
+			server.close();
+			client.disconnect();
+		} catch (MqttException | IOException e1) {
+			e1.printStackTrace();
 		}
-		System.out.println("Thank you for connecting to " + server.getLocalSocketAddress() + "\nGoodbye!");
-		server.close();
-		client.disconnect();
 		System.out.println("== END PUBLISHER ==");
 	}
 

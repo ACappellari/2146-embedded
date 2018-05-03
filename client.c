@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
     {
         error("ERROR connecting to server");
     }
-
+while(1){
     printf("Enter a message for the server: ");
 
     bzero(buffer,256);
@@ -59,16 +59,16 @@ int main(int argc, char *argv[])
     {
         error("ERROR writing to socket");
     }
-
-    bzero(buffer,256);
+}
+    /*bzero(buffer,256);
     n = read(sockfd,buffer,255);
-
+printf("%d\n",n);
     if (n < 0)
     {
         error("ERROR reading from socket");
     }
 
-    printf("%s\n", buffer);
+    printf("%s\n", buffer);*/
     return 0;
 }
 
