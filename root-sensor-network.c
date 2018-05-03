@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "contiki.h"
+#include "contiki-net.h"
 #include "net/rime.h"
 #include "random.h"
 
@@ -10,13 +11,30 @@
 #include "dev/button-sensor.h"
 #include "dev/leds.h"
 #include <stdio.h>
+#include "dev/uart0.h"
 
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
 
+#define SERIAL_BUF_SIZE 128
+
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network_process, "Sensor network implementation");
 AUTOSTART_PROCESSES(&sensor_network_process);
+/*---------------------------------------------------------------------------*/
+static char rx_buf[SERIAL_BUF_SIZE];
+static int rx_buf_index;
+static void uart_rx_callback(unsigned char c) {
+	
+	rx_buf[rx_buf_index] = c;     
+	if(c == '\n' || c == EOF){
+		printf("%s\n",rx_buf);
+		memset(rx_buf, 0, rx_buf_index);
+		rx_buf_index = 0;
+	}else{
+		rx_buf_index = rx_buf_index + 1;
+	}
+}
 /*---------------------------------------------------------------------------*/
 struct response_packet ; /* Forward declaration */
 
@@ -33,10 +51,6 @@ typedef struct node_unicast{
 } node;
 
 node me;
-
-/*---------------------------------------------------------------------------*/
-
-
 /*---------------------------------------------------------------------------*/
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
@@ -105,10 +119,10 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	me.nb_hops = 0;
 
 	runicast_open(&runicast, 144, &runicast_callbacks);
-
-	static struct etimer et;
-
 	broadcast_open(&broadcast, 129, &broadcast_call);
+
+	uart0_init(BAUD2UBR(115200)); //set the baud rate as necessary
+	uart0_set_input(uart_rx_callback); //set the callback function
 
 	PROCESS_END();	
 }
