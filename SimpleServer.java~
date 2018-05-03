@@ -46,7 +46,7 @@ public class SimpleServer extends Thread
     {
 	if(args.length < 1) {
 		System.out.println("Port missing...");
-		
+		exit(0);
 	}
         int port = Integer.parseInt(args[0]);
         try
