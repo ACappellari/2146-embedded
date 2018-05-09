@@ -1,7 +1,6 @@
 #include <stdio.h>
 
 #include "contiki.h"
-#include "contiki-net.h"
 #include "net/rime.h"
 #include "random.h"
 
@@ -11,30 +10,13 @@
 #include "dev/button-sensor.h"
 #include "dev/leds.h"
 #include <stdio.h>
-#include "dev/uart0.h"
 
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
 
-#define SERIAL_BUF_SIZE 128
-
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network_process, "Sensor network implementation");
 AUTOSTART_PROCESSES(&sensor_network_process);
-/*---------------------------------------------------------------------------*/
-static char rx_buf[SERIAL_BUF_SIZE];
-static int rx_buf_index;
-static void uart_rx_callback(unsigned char c) {
-	
-	rx_buf[rx_buf_index] = c;     
-	if(c == '\n' || c == EOF){
-		printf("%d\n",rx_buf);
-		memset(rx_buf, 0, rx_buf_index);
-		rx_buf_index = 0;
-	}else{
-		rx_buf_index = rx_buf_index + 1;
-	}
-}
 /*---------------------------------------------------------------------------*/
 struct response_packet ; /* Forward declaration */
 
@@ -51,12 +33,27 @@ typedef struct node_unicast{
 } node;
 
 node me;
+
+// Unicast connection for routing
+static struct runicast_conn runicast;
+// Unicast connection for sensor data
+static struct runicast_conn sensor_runicast;
+
 /*---------------------------------------------------------------------------*/
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
   printf("Root received runicast message received from %d.%d, seqno %d\n",
 	 from->u8[0], from->u8[1], seqno);
+  //Is the message received for the root node or myself ?
+  uint16_t CHAN = packetbuf_attr(PACKETBUF_ATTR_CHANNEL);
+
+  //If equal to 154, has to be forwarded to the ROOT node
+  if (CHAN == 154){
+  	char * s_payload = (char *) packetbuf_dataptr();
+	printf("SENSOR PACKET RECEIVED : %s\n", s_payload);
+
+  }
 
 }
 static void
@@ -75,7 +72,6 @@ timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retrans
 static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     sent_runicast,
 							     timedout_runicast};
-static struct runicast_conn runicast;
 /*---------------------------------------------------------------------------*/
 
 static void
@@ -112,6 +108,7 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	
 	PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
+	PROCESS_EXITHANDLER(runicast_close(&sensor_runicast);)
 	PROCESS_BEGIN();
 
 	me.addr.u8[0] = rimeaddr_node_addr.u8[0];
@@ -119,10 +116,11 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	me.nb_hops = 0;
 
 	runicast_open(&runicast, 144, &runicast_callbacks);
-	broadcast_open(&broadcast, 129, &broadcast_call);
+	runicast_open(&sensor_runicast, 154, &runicast_callbacks);
 
-	uart0_init(BAUD2UBR(115200)); //set the baud rate as necessary
-	uart0_set_input(uart_rx_callback); //set the callback function
+	static struct etimer et;
+
+	broadcast_open(&broadcast, 129, &broadcast_call);
 
 	PROCESS_END();	
 }
