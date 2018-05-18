@@ -190,6 +190,23 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
 static struct broadcast_conn broadcast;
+
+static struct broadcast_conn options_broadcast;
+
+static void
+options_broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
+{
+	if(parent.addr.u8[0] == from->u8[0] && parent.addr.u8[1] == from->u8[1]){
+		char *payload = (char *)packetbuf_dataptr();
+		printf("Received options broadcast from my parent '%s' \n", payload);
+		packetbuf_copyfrom(payload, strlen(payload));
+		broadcast_send(&options_broadcast);
+		packetbuf_clear();
+	}
+}
+
+static const struct broadcast_callbacks options_broadcast_call = {options_broadcast_recv};
+
 /*---------------------------------------------------------------------------*/
 			/* SEND SENSOR DATA */
 
@@ -213,6 +230,7 @@ send_sensor_data()
 	packetbuf_copyfrom(&buf, strlen(buf));
 	/* Then sends it */
 	runicast_send(&sensor_runicast, &parent.addr, MAX_RETRANSMISSIONS);
+	packetbuf_clear();
 	printf("I HAVE SENT SENSORS DATA\n");
 
 }
@@ -258,23 +276,24 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	runicast_open(&sensor_runicast, 154, &sensor_runicast_callbacks); //Sensor data channel
 	static struct etimer et;
 	broadcast_open(&broadcast, 129, &broadcast_call); //Broadcast routing channel
+	broadcast_open(&options_broadcast, 139, &options_broadcast_call);
 
 	BROADCAST:while(parent.addr.u8[0] == 0 && parent.addr.u8[1] == 0) {
 		//printf("LOOP start\n");
 		/* Delay 2-4 seconds */
-		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+		etimer_set(&et, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 8));
 
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 		
 		// Send packet looking for a parent with your id
-		printf("Broadcast sent\n");
+		printf("Broadcast sent, my parent %d.%d\n", parent.addr.u8[0], parent.addr.u8[1]);
 		broadcast_send(&broadcast);
 	}
 
 	while(parent.addr.u8[0] != 0)
 	{
 		//PROCESS_YIELD();
-		etimer_set(&et_data, CLOCK_SECOND * 5 + random_rand() % (CLOCK_SECOND * 5));
+		etimer_set(&et_data, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 16));
 		//for (etimer_set(&et_data, CLOCK_SECOND);; etimer_reset(&et_data)) {
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et_data));
 

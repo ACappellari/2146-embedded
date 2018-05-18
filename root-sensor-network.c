@@ -1,18 +1,22 @@
 #include <stdio.h>
 
 #include "contiki.h"
+#include "contiki-net.h"
 #include "net/rime.h"
 #include "random.h"
 
 #include "lib/list.h"
 #include "lib/memb.h"
 
+#include "dev/uart0.h"
 #include "dev/button-sensor.h"
 #include "dev/leds.h"
+#include "dev/serial-line.h"
 #include <stdio.h>
 
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
+#define SERIAL_BUF_SIZE 128
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network_process, "Sensor network implementation");
@@ -38,7 +42,19 @@ node me;
 static struct runicast_conn runicast;
 // Unicast connection for sensor data
 static struct runicast_conn sensor_runicast;
-
+/*---------------------------------------------------------------------------*/
+static char rx_buf[SERIAL_BUF_SIZE]; 
+static int rx_buf_index; 
+static void uart_rx_callback(unsigned char c) { 
+  rx_buf[rx_buf_index] = c;      
+  if(c == '\n' || c == EOF){ 
+    printf("%s\n",rx_buf); 
+    memset(rx_buf, 0, rx_buf_index); 
+    rx_buf_index = 0; 
+  }else{ 
+    rx_buf_index = rx_buf_index + 1; 
+  } 
+}
 /*---------------------------------------------------------------------------*/
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
@@ -73,6 +89,15 @@ static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     sent_runicast,
 							     timedout_runicast};
 /*---------------------------------------------------------------------------*/
+
+static void
+options_broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
+{
+	//ignore options broadcast
+}
+
+static const struct broadcast_callbacks options_broadcast_call = {options_broadcast_recv};
+static struct broadcast_conn options_broadcast;
 
 static void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
@@ -121,6 +146,20 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	static struct etimer et;
 
 	broadcast_open(&broadcast, 129, &broadcast_call);
+	broadcast_open(&options_broadcast, 139, &options_broadcast_call);
+
+	uart0_init(BAUD2UBR(115200)); //set the baud rate as necessary 
+  	uart0_set_input(uart_rx_callback); //set the callback function 
+
+	for(;;) {
+	     PROCESS_YIELD();
+	     if(ev == serial_line_event_message) {
+	       	printf("received line: %s\n", (char *)data);
+		packetbuf_clear();
+		packetbuf_copyfrom(data, strlen(data));
+		broadcast_send(&options_broadcast);
+	     }
+   	}		
 
 	PROCESS_END();	
 }
