@@ -57,54 +57,57 @@ static struct runicast_conn sensor_runicast;
 
 
 /*---------------------------------------------------------------------------*/
+/*                             RELAY SENSOR DATA TO ROOT                     */
+
+static void
+relay_sensor_data(char * s_payload)
+{
+	printf("MESSAGE TO RELAY : %s\n", s_payload);
+	while(runicast_is_transmitting(&sensor_runicast)){}
+	/* Create the sensor packet */
+	packetbuf_clear();
+	int len = strlen(s_payload);
+	char buf[len+16];
+	snprintf(buf, sizeof(buf), "%s", s_payload);
+	printf("THIS IS PACKET CONTENT %s\n", buf);
+
+	packetbuf_copyfrom(&buf, strlen(buf));
+	/* Then sends it */
+	runicast_send(&sensor_runicast, &parent.addr, MAX_RETRANSMISSIONS);
+	printf("I HAVE SENT SENSORS DATA AGAIN\n");
+
+}
+
+/*---------------------------------------------------------------------------*/
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
   printf("runicast message received from %d.%d, seqno %d\n",
 	 from->u8[0], from->u8[1], seqno);
 
-	//Is the message received for the root node or myself ?
-	uint16_t CHAN = packetbuf_attr(PACKETBUF_ATTR_CHANNEL);
-	//uint16_t ERECV = packetbuf_addr(PACKETBUF_ADDR_ERECEIVER);
-	//printf("THIS IS ERECV : %u\n", ERECV);
-	//If equal to 154, has to be forwarded to the ROOT node
-	if (CHAN == 154){
-		char * s_payload = (char *) packetbuf_dataptr();
-		printf("SENSOR PACKET RECEIVED : %s\n", s_payload);
-		//char * payload = (char *)  packetbuf_dataptr();
-		//printf("Payload received : %s\n", payload);
-		// Then sends it to its parent node until it reaches the root
-		//if (me.addr.u8[0] == 1 && me.addr.u8[1] == 0){
-			//printf("SENSOR DATA REACHED ROOT");
-			
-		//}
-		//else{
-			//printf("SENDING SENSOR DATA TO ROOT");
-		//}
+
+	//Received a response from my broadcast, should compare number of hops and override
+	uint16_t last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+	//printf("RSSI : %d\n", last_rssi);
+	char * payload = (char *) packetbuf_dataptr();
+	printf("Payload received : %s\n", payload);
+	uint8_t nb_hop = (uint8_t) atoi(payload);
+
+	if(USE_RSSI == 0 && parent.nb_hops >  nb_hop){
+		parent.addr.u8[0] = from->u8[0];
+		parent.addr.u8[1] = from->u8[1];		
+		parent.nb_hops = nb_hop;
+		uint8_t tmp = nb_hop + 1;
+		me.nb_hops = nb_hop + 1;
+		printf("Change parent to %d.%d with %d hop\n", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
+		// 
+	}else if (USE_RSSI == 1 && last_rssi > parent.rssi){
+		parent.addr.u8[0] = from->u8[0];
+		parent.addr.u8[1] = from->u8[1];
+		parent.rssi = last_rssi;
+		printf("Change parent to %d.%d with %d rssi\n", parent.addr.u8[0],parent.addr.u8[1],parent.rssi);
 	}
-	else {
-		//Received a response from my broadcast, should compare number of hops and override
-		uint16_t last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-		//printf("RSSI : %d\n", last_rssi);
-		char * payload = (char *) packetbuf_dataptr();
-		printf("Payload received : %s\n", payload);
-		uint8_t nb_hop = (uint8_t) atoi(payload);
 	
-		if(USE_RSSI == 0 && parent.nb_hops >  nb_hop){
-			parent.addr.u8[0] = from->u8[0];
-			parent.addr.u8[1] = from->u8[1];		
-			parent.nb_hops = nb_hop;
-			uint8_t tmp = nb_hop + 1;
-			me.nb_hops = nb_hop + 1;
-			printf("Change parent to %d.%d with %d hop\n", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
-			// 
-		}else if (USE_RSSI == 1 && last_rssi > parent.rssi){
-			parent.addr.u8[0] = from->u8[0];
-			parent.addr.u8[1] = from->u8[1];
-			parent.rssi = last_rssi;
-			printf("Change parent to %d.%d with %d rssi\n", parent.addr.u8[0],parent.addr.u8[1],parent.rssi);
-		}
-	}
 }
 static void
 sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
@@ -122,9 +125,47 @@ timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retrans
 	parent.addr.u8[0] = 0;
 	parent.nb_hops = 254;
 }
+
+/*---------------------------------------------------------------------------*/
+
+static void
+sensor_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
+{
+  printf("runicast message received from %d.%d, seqno %d\n",
+	 from->u8[0], from->u8[1], seqno);
+
+	char * s_payload = (char *) packetbuf_dataptr();
+	printf("SENSOR PACKET RECEIVED : %s\n", s_payload);
+	//char * payload = (char *)  packetbuf_dataptr();
+	//printf("Payload received : %s\n", payload);
+	// Then sends it to its parent node until it reaches the root
+	relay_sensor_data(s_payload);
+		
+
+}
+static void
+sensor_sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
+{
+  printf("runicast message sent to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
+
+}
+static void
+sensor_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
+{
+  	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
+	
+	parent.addr.u8[0] = 0;
+	parent.nb_hops = 254;
+}
+
 static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     sent_runicast,
 							     timedout_runicast};
+static const struct runicast_callbacks sensor_runicast_callbacks = {sensor_recv_runicast,
+							     	    sensor_sent_runicast,
+							     	    sensor_timedout_runicast};
 /*---------------------------------------------------------------------------*/
 
 static void

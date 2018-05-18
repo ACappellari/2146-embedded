@@ -1,32 +1,39 @@
 #include "contiki.h"
-#include "net/rime.h"
-#include "random.h"
-
 #include "lib/list.h"
 #include "lib/memb.h"
+#include "lib/random.h"
+#include "net/rime.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Data sensors */
-//TEMPERATURE AND HUMIDITY
-#include "dev/sht11.h"
-//LIGHT
-#include "dev/i2cmaster.h"
+/*---------------------------------------------------------------------------*/
+
+/* We define all variables needed */
+#include "dev/sht11.h" //TEMPERATURE AND HUMIDITY
+#include "dev/i2cmaster.h" //LIGHT
 #include "dev/light-ziglet.h"
 
 
-#define MAX_RETRANSMISSIONS 8
+#define MAX_RETRANSMISSIONS 16
 #define NUM_HISTORY_ENTRIES 4
 #define USE_RSSI 0
 
+/*---------------------------------------------------------------------------*/
+
+/* We first declare our two processes. */
+PROCESS(broadcast_process, "Broadcast process");
+PROCESS(unicast_process, "Unicast process");
+
+/* The AUTOSTART_PROCESSES() definition specifices what processes to
+   start when this module is loaded. We put both our processes
+   there. */
+AUTOSTART_PROCESSES(&broadcast_process, &unicast_process);
 
 /*---------------------------------------------------------------------------*/
-PROCESS(sensor_network_process, "Sensor network implementation");
-AUTOSTART_PROCESSES(&sensor_network_process);
-/*---------------------------------------------------------------------------*/
-				/*Forward declaration */
-struct response_packet ; 
+
+/* We define all structures used in both processes */
+struct response_packet; 
 typedef struct response_packet{
 	uint8_t id;
 	uint8_t nb_hops;
@@ -39,8 +46,8 @@ typedef struct node_unicast{
 	int16_t rssi; //Signed because can be negative
 } node;
 
-node parent;
-node me;
+static node parent;
+static node me;
 
 struct sensor_data;
 typedef struct sensor_data{
@@ -48,16 +55,21 @@ typedef struct sensor_data{
 	char* type;
 } sensor_data;
 
-sensor_data s_data;
+static sensor_data s_data;
+
+//Event for having parent
+static process_event_t event_have_parent;
 
 // Unicast connection for routing
 static struct runicast_conn runicast;
 // Unicast connection for sensor data
 static struct runicast_conn sensor_runicast;
-
+// Broadcast connection for routing
+static struct broadcast_conn broadcast;
 
 /*---------------------------------------------------------------------------*/
-/*                             RELAY SENSOR DATA TO ROOT                     */
+
+/* We define all functions used in callbacks */
 
 static void
 relay_sensor_data(char * s_payload)
@@ -78,7 +90,6 @@ relay_sensor_data(char * s_payload)
 
 }
 
-/*---------------------------------------------------------------------------*/
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
@@ -140,9 +151,9 @@ sensor_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t se
 	//printf("Payload received : %s\n", payload);
 	// Then sends it to its parent node until it reaches the root
 	relay_sensor_data(s_payload);
-		
 
 }
+
 static void
 sensor_sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
 {
@@ -150,6 +161,7 @@ sensor_sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retr
 	 to->u8[0], to->u8[1], retransmissions);
 
 }
+
 static void
 sensor_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
 {
@@ -166,6 +178,7 @@ static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 static const struct runicast_callbacks sensor_runicast_callbacks = {sensor_recv_runicast,
 							     	    sensor_sent_runicast,
 							     	    sensor_timedout_runicast};
+
 /*---------------------------------------------------------------------------*/
 
 static void
@@ -189,10 +202,8 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 }
 
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
-static struct broadcast_conn broadcast;
-/*---------------------------------------------------------------------------*/
-			/* SEND SENSOR DATA */
 
+/*---------------------------------------------------------------------------*/
 static void
 send_sensor_data()
 {
@@ -217,94 +228,121 @@ send_sensor_data()
 
 }
 
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(broadcast_process, ev, data)
+{
+  static struct etimer warmup_et;
+  static struct etimer et;
+  parent.addr.u8[0] = 0;
+  parent.addr.u8[1] = 0;
+  parent.rssi = (signed) -65534;
+  parent.nb_hops = 254;	
+
+  me.addr.u8[0] = rimeaddr_node_addr.u8[0];
+  me.addr.u8[1] = rimeaddr_node_addr.u8[1];
+
+  PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
+  PROCESS_BEGIN();
+
+  //Define event type for having parent
+  event_have_parent = process_alloc_event();
+
+  broadcast_open(&broadcast, 129, &broadcast_call); //Broadcast routing channel
+
+  //etimer_set(&warmup_et, CLOCK_SECOND * 2);
+  //PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&warmup_et));
+  etimer_set(&et, CLOCK_SECOND * 16 + random_rand() % (CLOCK_SECOND * 16));
+
+  while(1) {
+   
+    if(parent.addr.u8[0] == 0 && parent.addr.u8[1] == 0) {
+	PROCESS_YIELD_UNTIL(etimer_expired(&et));
+	//PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+    	/* Send a broadcast every 16 - 32 seconds */
+    	//etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+	//PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+
+	printf("Broadcast sent : %d.%d\n", parent.addr.u8[0], parent.addr.u8[1]);
+	broadcast_send(&broadcast);
+	
+	etimer_reset(&et);
+    }
+    else{
+	//PROCESS_YIELD_UNTIL(parent.addr.u8[0] == 0 && parent.addr.u8[1] == 0);
+	process_post(&unicast_process, event_have_parent , &parent );
+	//etimer_reset(&et);
+    }
+    
+    
+  }
+
+  PROCESS_END();
+}
 
 /*---------------------------------------------------------------------------*/
 
-// void 	broadcast_open (struct broadcast_conn *c, uint16_t channel, const struct broadcast_callbacks *u)
-// void 	broadcast_close (struct broadcast_conn *c)
-// int 		broadcast_send (struct broadcast_conn *c)
-
-// void 	runicast_open(struct runicast_conn *c, uint16_t channel, const struct runicast_callbacks *u)
-// void		runicast_close(struct runicast_conn *c)
-// int 		runicast_send(struct runicast_conn *c, const rimeaddr_t *receiver, uint8_t max_retransmissions)
-
-
-PROCESS_THREAD(sensor_network_process, ev, data)
+PROCESS_THREAD(unicast_process, ev, data)
 {
-	
-	PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
-	PROCESS_EXITHANDLER(runicast_close(&runicast);)
-	PROCESS_EXITHANDLER(runicast_close(&sensor_runicast);)
-	PROCESS_BEGIN();
+  PROCESS_EXITHANDLER(runicast_close(&runicast);)
+  PROCESS_EXITHANDLER(runicast_close(&sensor_runicast);)
+  PROCESS_BEGIN();
 
-	/* Initialize all structures used to read sensors */
-	static struct etimer et_data;
-	static unsigned rh;
-	sht11_init();
-	uint16_t light;
- 	light_ziglet_init();
-	
-	/* Initialize internal parameters of the node */
-	parent.addr.u8[0] = 0;
-	parent.addr.u8[1] = 0;
-	parent.rssi = (signed) -65534;
-	parent.nb_hops = 254;	
+  static struct etimer et_data;
+  static unsigned rh;
+  sht11_init();
+  uint16_t light;
+  light_ziglet_init();
 
-	me.addr.u8[0] = rimeaddr_node_addr.u8[0];
-	me.addr.u8[1] = rimeaddr_node_addr.u8[1];
-	
-	/* Opens the unicast and broadcast channels */
-	runicast_open(&runicast, 144, &runicast_callbacks); //Unicast routing channel
-	runicast_open(&sensor_runicast, 154, &sensor_runicast_callbacks); //Sensor data channel
-	static struct etimer et;
-	broadcast_open(&broadcast, 129, &broadcast_call); //Broadcast routing channel
+  runicast_open(&runicast, 144, &runicast_callbacks); //Unicast routing channel
+  runicast_open(&sensor_runicast, 154, &sensor_runicast_callbacks); //Sensor data channel
 
-	BROADCAST:while(parent.addr.u8[0] == 0 && parent.addr.u8[1] == 0) {
-		//printf("LOOP start\n");
-		/* Delay 2-4 seconds */
-		etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+  //etimer_set(&et_data, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 8));
 
-		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-		
-		// Send packet looking for a parent with your id
-		printf("Broadcast sent\n");
-		broadcast_send(&broadcast);
-	}
+  while(1) {
+    //PROCESS_YIELD();
+    PROCESS_WAIT_EVENT_UNTIL(ev == event_have_parent);
 
-	while(parent.addr.u8[0] != 0)
-	{
-		//PROCESS_YIELD();
-		etimer_set(&et_data, CLOCK_SECOND * 5 + random_rand() % (CLOCK_SECOND * 5));
-		//for (etimer_set(&et_data, CLOCK_SECOND);; etimer_reset(&et_data)) {
-		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et_data));
+    node *parent = data;
 
-		    /* TEMPERATURE */
-		    s_data.type = "./temperature";
-		    s_data.value = (unsigned) (-39.60 + 0.01 * sht11_temp());
-		    //printf("TYPE : %s\n", s_data.type);
-		    //printf("VALUE : %u\n", s_data.value);
-		    send_sensor_data();
+    printf("This is the data : %d %d\n", parent->addr.u8[0], parent->addr.u8[1]);
 
-		    /* HUMIDITY */		  
-		    //rh = sht11_humidity();
-		    //s_data.type = "./humidity";
-		    //s_data.value = (unsigned) (-4 + 0.0405*rh - 2.8e-6*(rh*rh));
-		    //printf("TYPE : %s\n", s_data.type);
-		    //printf("VALUE : %u\n", s_data.value);
+    if(parent->addr.u8[0] != 0){
+	//PROCESS_YIELD_UNTIL(etimer_expired(&et_data));
+	//PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et_data));
+    	etimer_set(&et_data, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 8));
+    
+    	//PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et_data));
 
-		    /* LIGHT */
-		    //light = (unsigned) light_ziglet_read();
-		    //s_data.type = "./light";
-		    //s_data.value = (unsigned) light;
-		    //printf("TYPE : %s\n", s_data.type);
-		    //printf("VALUE : %u\n", s_data.value);
-			
-		  //}
-	
-	}
-	
-	
-	goto BROADCAST;
+	// TEMPERETURE
+	s_data.type = "./temperature";
+	s_data.value = (unsigned) (-39.60 + 0.01 * sht11_temp());
+	//printf("TYPE : %s\n", s_data.type);
+	//printf("VALUE : %u\n", s_data.value);
+	send_sensor_data();
 
-	PROCESS_END();	
+	// HUMIDITY	  
+	//rh = sht11_humidity();
+	//s_data.type = "./humidity";
+	//s_data.value = (unsigned) (-4 + 0.0405*rh - 2.8e-6*(rh*rh));
+	//printf("TYPE : %s\n", s_data.type);
+	//printf("VALUE : %u\n", s_data.value);
+
+	// LIGHT
+	//light = (unsigned) light_ziglet_read();
+	//s_data.type = "./light";
+	//s_data.value = (unsigned) light;
+	//printf("TYPE : %s\n", s_data.type);
+	//printf("VALUE : %u\n", s_data.value);
+	etimer_reset(&et_data);
+    }
+    //else{
+	//PROCESS_YIELD_UNTIL(parent.addr.u8[0] != 0);
+	//process_post(&broadcast_process, PROCESS_EVENT_CONTINUE , &(parent) );
+	//etimer_reset(&et_data);
+    //}
+    
+  }
+
+  PROCESS_END();
 }
+/*---------------------------------------------------------------------------*/
