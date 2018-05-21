@@ -14,16 +14,19 @@
 #include "dev/serial-line.h"
 #include <stdio.h>
 
-#define MAX_RETRANSMISSIONS 4
+#define MAX_RETRANSMISSIONS 16
 #define NUM_HISTORY_ENTRIES 4
+#define ACK_CHILD -42
+#define MAX_CHILDREN 10
 #define SERIAL_BUF_SIZE 128
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network_process, "Sensor network implementation");
 AUTOSTART_PROCESSES(&sensor_network_process);
 /*---------------------------------------------------------------------------*/
-struct response_packet ; /* Forward declaration */
+			    /* Forward declaration */
 
+struct response_packet ; 
 typedef struct response_packet
 {
 	uint8_t id;
@@ -38,16 +41,83 @@ typedef struct node_unicast{
 
 node me;
 
+struct tuple_child;
+typedef struct tuple_child{
+	rimeaddr_t addr;
+} tuple_child;
+
+tuple_child children[MAX_CHILDREN];
+static number_children = 0;
+
 // Unicast connection for routing
 static struct runicast_conn runicast;
 // Unicast connection for sensor data
 static struct runicast_conn sensor_runicast;
+
+/*---------------------------------------------------------------------------*/
+static int
+verify_children(tuple_child t){
+    int isIn = 0;
+    int j;
+    for(j = 0; j < number_children; j++) {
+        if(children[j].addr.u8[0] == t.addr.u8[0] && children[j].addr.u8[1] == t.addr.u8[1]){
+		//isIn = 1;
+		return j;
+	}
+    }
+    return isIn;
+}
+
+void removeChild(int index)
+{
+	int i;
+	for(i = index; i < number_children - 1; i++){
+		children[i] = children[i + 1];
+	}
+	number_children--;
+  
+}
+
 /*---------------------------------------------------------------------------*/
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
-  printf("Root received runicast message received from %d.%d, seqno %d : %s\n",
-	 from->u8[0], from->u8[1], seqno, (char *) packetbuf_dataptr());
+  printf("Root received runicast message received from %d.%d, seqno %d\n", from->u8[0], from->u8[1], seqno);
+
+  uint16_t CHAN = packetbuf_attr(PACKETBUF_ATTR_CHANNEL);
+
+  //If equal to 154, this is a sensor packet
+  if (CHAN == 154){
+  	char * s_payload = (char *) packetbuf_dataptr();
+	printf("SENSOR PACKET RECEIVED : %s\n", s_payload);
+
+  }
+  else if (CHAN == 144){
+	char * payload = (char *) packetbuf_dataptr();
+	printf("Payload received : %s\n", payload);
+	int code = (int) atoi(payload);
+	if(code == -42){
+		if(number_children < MAX_CHILDREN){
+			tuple_child temp;
+			temp.addr.u8[0] = from->u8[0];
+			temp.addr.u8[1] = from->u8[1];
+			if(verify_children(temp) == 0){
+				children[number_children] = temp;
+				//printf("Child : %d.%d\n", children[number_children].addr.u8[0], children[number_children].addr.u8[1]);
+				number_children++;
+			}
+		}
+		else{
+			printf("Max number of children reached\n");
+		}
+	}
+	else{
+		printf("Error : unknown unicast message type\n");
+	}
+  }
+  else{
+	printf("Error : unicast channel unknown\n");
+  }
 }
 
 static void
@@ -60,6 +130,7 @@ options_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t s
   printf("SENSOR PACKET RECEIVED : %s\n", s_payload);
 
 }
+
 static void
 sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
 {
@@ -70,9 +141,24 @@ sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmiss
 static void
 timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
 {
-  printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
 	 to->u8[0], to->u8[1], retransmissions);
+
+	//Create temporary node for testing
+	tuple_child temp;
+	temp.addr.u8[0] = to->u8[0];
+	temp.addr.u8[1] = to->u8[1];
+	int isChild = verify_children(temp);
+
+	//If the node lost is a child node
+	if(isChild > 0){
+		removeChild(isChild);
+	}
+	else{
+		printf("Error, unicast message sent to unknown node timed out\n");
+	}
 }
+
 static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     sent_runicast,
 							     timedout_runicast};
@@ -113,7 +199,7 @@ static int rx_buf_index;
 static void uart_rx_callback(unsigned char c) { 
   rx_buf[rx_buf_index] = c;      
   if(c == '\n' || c == EOF){ 
-   printf("received line: %s\n", (char *)rx_buf);
+   printf("received line: %s", (char *)rx_buf);
    packetbuf_clear();
    packetbuf_copyfrom(rx_buf, strlen(rx_buf));
    broadcast_send(&options_broadcast);

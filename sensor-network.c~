@@ -16,9 +16,11 @@
 #include "dev/light-ziglet.h"
 
 
-#define MAX_RETRANSMISSIONS 8
+#define MAX_RETRANSMISSIONS 16
 #define NUM_HISTORY_ENTRIES 4
 #define USE_RSSI 0
+#define ACK_CHILD -42
+#define MAX_CHILDREN 10
 
 
 /*---------------------------------------------------------------------------*/
@@ -50,6 +52,14 @@ typedef struct sensor_data{
 
 sensor_data s_data;
 
+struct tuple_child;
+typedef struct tuple_child{
+	rimeaddr_t addr;
+} tuple_child;
+
+tuple_child children[MAX_CHILDREN];
+static number_children = 0;
+
 // Unicast connection for routing
 static struct runicast_conn runicast;
 // Unicast connection for sensor data
@@ -79,6 +89,47 @@ relay_sensor_data(char * s_payload)
 }
 
 /*---------------------------------------------------------------------------*/
+			/* SEND CHILD UNICAST */
+static void
+send_child_confirmation()
+{
+	/* Wait for the runicast channel to be available*/
+	while(runicast_is_transmitting(&runicast)){}
+	/* Create the sensor packet */
+	packetbuf_clear();
+	uint16_t max = ACK_CHILD;
+	char buf[16];
+	snprintf(buf, sizeof(buf), "%d", max);
+	packetbuf_copyfrom(&buf, strlen(buf));
+	/* Then sends it */
+	runicast_send(&runicast, &parent.addr, MAX_RETRANSMISSIONS);
+	printf("I HAVE SENT CHILD ACK\n");
+
+}
+
+static int
+verify_children(tuple_child t){
+	int isIn = 0;
+	int j;
+	for(j = 0; j < number_children; j++) {
+		if(children[j].addr.u8[0] == t.addr.u8[0] && children[j].addr.u8[1] == t.addr.u8[1]){
+			//isIn = 1;
+			return j;
+		}
+	}
+	return isIn;
+}
+
+void removeChild(int index)
+{
+	int i;
+	for(i = index; i < number_children - 1; i++){
+		children[i] = children[i + 1];
+	}
+	number_children--;
+  
+}
+/*---------------------------------------------------------------------------*/
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
@@ -92,20 +143,44 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 	char * payload = (char *) packetbuf_dataptr();
 	printf("Payload received : %s\n", payload);
 	uint8_t nb_hop = (uint8_t) atoi(payload);
-
-	if(USE_RSSI == 0 && parent.nb_hops >  nb_hop){
-		parent.addr.u8[0] = from->u8[0];
-		parent.addr.u8[1] = from->u8[1];		
-		parent.nb_hops = nb_hop;
-		uint8_t tmp = nb_hop + 1;
-		me.nb_hops = nb_hop + 1;
-		printf("Change parent to %d.%d with %d hop\n", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
-		// 
-	}else if (USE_RSSI == 1 && last_rssi > parent.rssi){
-		parent.addr.u8[0] = from->u8[0];
-		parent.addr.u8[1] = from->u8[1];
-		parent.rssi = last_rssi;
-		printf("Change parent to %d.%d with %d rssi\n", parent.addr.u8[0],parent.addr.u8[1],parent.rssi);
+	
+	//This is a ACK_CHILD message
+	if(nb_hop == -42){
+		if(number_children < MAX_CHILDREN){
+			tuple_child temp;
+			temp.addr.u8[0] = from->u8[0];
+			temp.addr.u8[1] = from->u8[1];
+			if(verify_children(temp) == 0){
+				children[number_children] = temp;
+				number_children++;
+			}
+		}
+		else{
+			printf("Max number of children reached\n");
+		}
+	}
+	//This is a standard routing message
+	else{
+		tuple_child temp;
+		temp.addr.u8[0] = from->u8[0];
+		temp.addr.u8[1] = from->u8[1];
+		if(USE_RSSI == 0 && parent.nb_hops >  nb_hop && verify_children(temp) == 0){
+			parent.addr.u8[0] = from->u8[0];
+			parent.addr.u8[1] = from->u8[1];		
+			parent.nb_hops = nb_hop;
+			uint8_t tmp = nb_hop + 1;
+			me.nb_hops = nb_hop + 1;
+			printf("Change parent to %d.%d with %d hop\n", parent.addr.u8[0],parent.addr.u8[1],parent.nb_hops);
+			//Send a unicast message to the parent to add me to its children
+			send_child_confirmation();
+		}else if (USE_RSSI == 1 && last_rssi > parent.rssi && verify_children(temp) == 0){
+			parent.addr.u8[0] = from->u8[0];
+			parent.addr.u8[1] = from->u8[1];
+			parent.rssi = last_rssi;
+			printf("Change parent to %d.%d with %d rssi\n", parent.addr.u8[0],parent.addr.u8[1],parent.rssi);
+			//Send a unicast message to the parent to add me to its children
+			send_child_confirmation();
+		}
 	}
 	
 }
@@ -122,8 +197,24 @@ timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retrans
   	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
 	 to->u8[0], to->u8[1], retransmissions);
 	
-	parent.addr.u8[0] = 0;
-	parent.nb_hops = 254;
+	//Create temporary node for testing
+	tuple_child temp;
+	temp.addr.u8[0] = to->u8[0];
+	temp.addr.u8[1] = to->u8[1];
+	int isChild = verify_children(temp);
+	
+	//If the node lost is the parent
+	if(temp.addr.u8[0] == parent.addr.u8[0] && temp.addr.u8[1] == parent.addr.u8[1]){
+		parent.addr.u8[0] = 0;
+		parent.nb_hops = 254;
+	}
+	//If the node lost is a child node
+	else if(isChild > 0){
+		removeChild(isChild);
+	}
+	else{
+		printf("Error, unicast message sent to unknown node timed out\n");
+	}
 }
 
 /*---------------------------------------------------------------------------*/
@@ -150,6 +241,7 @@ sensor_sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retr
 	 to->u8[0], to->u8[1], retransmissions);
 
 }
+
 static void
 sensor_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
 {
@@ -163,6 +255,7 @@ sensor_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t 
 static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     sent_runicast,
 							     timedout_runicast};
+
 static const struct runicast_callbacks sensor_runicast_callbacks = {sensor_recv_runicast,
 							     	    sensor_sent_runicast,
 							     	    sensor_timedout_runicast};
@@ -273,7 +366,7 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	
 	/* Opens the unicast and broadcast channels */
 	runicast_open(&runicast, 144, &runicast_callbacks); //Unicast routing channel
-	runicast_open(&sensor_runicast, 154, &runicast_callbacks); //Sensor data channel
+	runicast_open(&sensor_runicast, 154, &sensor_runicast_callbacks); //Sensor data channel
 	static struct etimer et;
 	broadcast_open(&broadcast, 129, &broadcast_call); //Broadcast routing channel
 	broadcast_open(&options_broadcast, 139, &options_broadcast_call);
@@ -281,12 +374,12 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	BROADCAST:while(parent.addr.u8[0] == 0 && parent.addr.u8[1] == 0) {
 		//printf("LOOP start\n");
 		/* Delay 2-4 seconds */
-		etimer_set(&et, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 8));
+		etimer_set(&et, CLOCK_SECOND * 16 + random_rand() % (CLOCK_SECOND * 16));
 
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 		
 		// Send packet looking for a parent with your id
-		printf("Broadcast sent\n");
+		printf("Broadcast sent, my parent %d.%d\n", parent.addr.u8[0], parent.addr.u8[1]);
 		broadcast_send(&broadcast);
 	}
 
