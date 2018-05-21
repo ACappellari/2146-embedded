@@ -22,6 +22,10 @@
 #define ACK_CHILD -42
 #define MAX_CHILDREN 10
 
+#define OPTION_TEMP 1
+#define OPTION_HUMIDITY 0
+#define OPTION_LIGHT 0
+
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network_process, "Sensor network implementation");
@@ -60,14 +64,17 @@ typedef struct tuple_child{
 tuple_child children[MAX_CHILDREN];
 static number_children = 0;
 
+uint8_t option_sensor_data = 0;
+
 // Unicast connection for routing
 static struct runicast_conn runicast;
 // Unicast connection for sensor data
 static struct runicast_conn sensor_runicast;
-
+// Unicast connection for options
+static struct runicast_conn options_runicast;
 
 /*---------------------------------------------------------------------------*/
-/*                             RELAY SENSOR DATA TO ROOT                     */
+			/*RELAY SENSOR DATA TO ROOT*/
 
 static void
 relay_sensor_data(char * s_payload)
@@ -80,11 +87,36 @@ relay_sensor_data(char * s_payload)
 	char buf[len+16];
 	snprintf(buf, sizeof(buf), "%s", s_payload);
 	printf("THIS IS PACKET CONTENT %s\n", buf);
-
 	packetbuf_copyfrom(&buf, strlen(buf));
 	/* Then sends it */
+
 	runicast_send(&sensor_runicast, &parent.addr, MAX_RETRANSMISSIONS);
+	packetbuf_clear();
 	printf("I HAVE SENT SENSORS DATA AGAIN\n");
+
+}
+
+/*---------------------------------------------------------------------------*/
+			/*RELAY OPTIONS TO CHILD NODES*/
+
+static void
+relay_options_data(char * s_payload)
+{
+	printf("MESSAGE TO RELAY : %s\n", s_payload);
+	while(runicast_is_transmitting(&options_runicast)){}
+	/* Create the sensor packet */
+	int len = strlen(s_payload);
+	char buf[len];
+	snprintf(buf, sizeof(buf), "%s", s_payload);
+	packetbuf_clear();
+	packetbuf_copyfrom(&buf, strlen(buf));
+	/* Then sends it */
+	int j;
+	for(j = 0; j < number_children; j++) {
+		runicast_send(&options_runicast, &children[j].addr, MAX_RETRANSMISSIONS);
+	}
+	packetbuf_clear();
+	printf("I HAVE SENT OPTIONS DATA AGAIN\n");
 
 }
 
@@ -103,6 +135,7 @@ send_child_confirmation()
 	packetbuf_copyfrom(&buf, strlen(buf));
 	/* Then sends it */
 	runicast_send(&runicast, &parent.addr, MAX_RETRANSMISSIONS);
+	packetbuf_clear();
 	printf("I HAVE SENT CHILD ACK\n");
 
 }
@@ -130,6 +163,7 @@ void removeChild(int index)
   
 }
 /*---------------------------------------------------------------------------*/
+			/* UNICAST ROUTING PACKETS */
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
@@ -143,9 +177,9 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 	char * payload = (char *) packetbuf_dataptr();
 	printf("Payload received : %s\n", payload);
 	uint8_t nb_hop = (uint8_t) atoi(payload);
-	
+	uint8_t test = -42;
 	//This is a ACK_CHILD message
-	if(nb_hop == -42){
+	if(nb_hop == test){
 		if(number_children < MAX_CHILDREN){
 			tuple_child temp;
 			temp.addr.u8[0] = from->u8[0];
@@ -218,6 +252,7 @@ timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retrans
 }
 
 /*---------------------------------------------------------------------------*/
+			  /* UNICAST SENSOR DATA PACKETS */
 
 static void
 sensor_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
@@ -252,6 +287,55 @@ sensor_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t 
 	parent.nb_hops = 254;
 }
 
+/*---------------------------------------------------------------------------*/
+			  /* UNICAST OPTIONS PACKETS */
+
+static void
+options_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
+{
+  printf("runicast message received from %d.%d, seqno %d\n",
+	 from->u8[0], from->u8[1], seqno);
+
+	char * payload = (char *) packetbuf_dataptr();
+	printf("OPTION PACKET RECEIVED : %s\n", payload);
+	uint8_t option = (uint8_t) atoi(payload);
+	if(option == 0 || option == 1 || option == 2){
+		option_sensor_data = option;
+		relay_options_data(payload);
+	}
+}
+
+static void
+options_sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
+{
+  printf("runicast message sent to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
+
+}
+
+static void
+options_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
+{
+  	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
+	
+	//Create temporary node for testing
+	tuple_child temp;
+	temp.addr.u8[0] = to->u8[0];
+	temp.addr.u8[1] = to->u8[1];
+	int isChild = verify_children(temp);
+	//If the node lost is a child node
+	if(isChild > 0){
+		removeChild(isChild);
+	}
+	else{
+		printf("Error, unicast message sent to unknown node timed out\n");
+	}
+}
+
+/*---------------------------------------------------------------------------*/
+			/* UNICAST CALLBACKS */
+
 static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     sent_runicast,
 							     timedout_runicast};
@@ -259,6 +343,10 @@ static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 static const struct runicast_callbacks sensor_runicast_callbacks = {sensor_recv_runicast,
 							     	    sensor_sent_runicast,
 							     	    sensor_timedout_runicast};
+
+static const struct runicast_callbacks options_runicast_callbacks = {options_recv_runicast,
+							     	     options_sent_runicast,
+							     	     options_timedout_runicast};
 /*---------------------------------------------------------------------------*/
 
 static void
@@ -283,22 +371,6 @@ broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
 
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
 static struct broadcast_conn broadcast;
-
-static struct broadcast_conn options_broadcast;
-
-static void
-options_broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
-{
-	if(parent.addr.u8[0] == from->u8[0] && parent.addr.u8[1] == from->u8[1]){
-		char *payload = (char *)packetbuf_dataptr();
-		printf("Received options broadcast from my parent '%s' \n", payload);
-		packetbuf_copyfrom(payload, strlen(payload));
-		broadcast_send(&options_broadcast);
-		packetbuf_clear();
-	}
-}
-
-static const struct broadcast_callbacks options_broadcast_call = {options_broadcast_recv};
 
 /*---------------------------------------------------------------------------*/
 			/* SEND SENSOR DATA */
@@ -346,10 +418,12 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_EXITHANDLER(runicast_close(&sensor_runicast);)
+	PROCESS_EXITHANDLER(runicast_close(&options_runicast);)
 	PROCESS_BEGIN();
 
 	/* Initialize all structures used to read sensors */
 	static struct etimer et_data;
+	static struct etimer et;
 	static unsigned rh;
 	sht11_init();
 	uint16_t light;
@@ -367,14 +441,13 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	/* Opens the unicast and broadcast channels */
 	runicast_open(&runicast, 144, &runicast_callbacks); //Unicast routing channel
 	runicast_open(&sensor_runicast, 154, &sensor_runicast_callbacks); //Sensor data channel
-	static struct etimer et;
+	runicast_open(&options_runicast, 164, &options_runicast_callbacks); //Options channel
 	broadcast_open(&broadcast, 129, &broadcast_call); //Broadcast routing channel
-	broadcast_open(&options_broadcast, 139, &options_broadcast_call);
 
 	BROADCAST:while(parent.addr.u8[0] == 0 && parent.addr.u8[1] == 0) {
 		//printf("LOOP start\n");
 		/* Delay 2-4 seconds */
-		etimer_set(&et, CLOCK_SECOND * 16 + random_rand() % (CLOCK_SECOND * 16));
+		etimer_set(&et, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 16));
 
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 		
@@ -385,17 +458,17 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 
 	while(parent.addr.u8[0] != 0)
 	{
+		
 		//PROCESS_YIELD();
-		etimer_set(&et_data, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 16));
+		etimer_set(&et_data, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 8));
 		//for (etimer_set(&et_data, CLOCK_SECOND);; etimer_reset(&et_data)) {
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et_data));
-
+		
 		    /* TEMPERATURE */
 		    s_data.type = "./temperature";
 		    s_data.value = (unsigned) (-39.60 + 0.01 * sht11_temp());
 		    //printf("TYPE : %s\n", s_data.type);
 		    //printf("VALUE : %u\n", s_data.value);
-		    send_sensor_data();
 
 		    /* HUMIDITY */		  
 		    //rh = sht11_humidity();
@@ -410,6 +483,8 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 		    //s_data.value = (unsigned) light;
 		    //printf("TYPE : %s\n", s_data.type);
 		    //printf("VALUE : %u\n", s_data.value);
+			
+		    send_sensor_data();
 			
 		  //}
 	

@@ -53,8 +53,11 @@ static number_children = 0;
 static struct runicast_conn runicast;
 // Unicast connection for sensor data
 static struct runicast_conn sensor_runicast;
+// Unicast connection for options
+static struct runicast_conn options_runicast;
 
 /*---------------------------------------------------------------------------*/
+			/* CHILD NODE MANIPULATION */
 static int
 verify_children(tuple_child t){
     int isIn = 0;
@@ -79,6 +82,8 @@ void removeChild(int index)
 }
 
 /*---------------------------------------------------------------------------*/
+			/* UNICAST ROUTING PACKETS */
+
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
@@ -121,7 +126,7 @@ recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 }
 
 static void
-options_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
+sensor_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
   printf("Root received sensor data from %d.%d, seqno %d\n",
 	 from->u8[0], from->u8[1], seqno);
@@ -159,22 +164,59 @@ timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retrans
 	}
 }
 
+/*---------------------------------------------------------------------------*/
+			  /* UNICAST OPTIONS PACKETS */
+
+static void
+options_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
+{
+  printf("runicast message received from %d.%d, seqno %d\n",
+	 from->u8[0], from->u8[1], seqno);
+}
+
+static void
+options_sent_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
+{
+  printf("runicast message sent to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
+
+}
+
+static void
+options_timedout_runicast(struct runicast_conn *c, const rimeaddr_t *to, uint8_t retransmissions)
+{
+  	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
+	
+	//Create temporary node for testing
+	tuple_child temp;
+	temp.addr.u8[0] = to->u8[0];
+	temp.addr.u8[1] = to->u8[1];
+	int isChild = verify_children(temp);
+	//If the node lost is a child node
+	if(isChild > 0){
+		removeChild(isChild);
+	}
+	else{
+		printf("Error, unicast message sent to unknown node timed out\n");
+	}
+}
+
+/*---------------------------------------------------------------------------*/
+			/* UNICAST CALLBACKS */
+
 static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     sent_runicast,
 							     timedout_runicast};
+
+static const struct runicast_callbacks sensor_runicast_callbacks = {sensor_recv_runicast,
+							     	    sent_runicast,
+							            timedout_runicast};
+
 static const struct runicast_callbacks options_runicast_callbacks = {options_recv_runicast,
-							     sent_runicast,
-							     timedout_runicast};
+							     	     options_sent_runicast,
+							             options_timedout_runicast};
 /*---------------------------------------------------------------------------*/
-
-static void
-options_broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
-{
-	//ignore options broadcast
-}
-
-static const struct broadcast_callbacks options_broadcast_call = {options_broadcast_recv};
-static struct broadcast_conn options_broadcast;
 
 static void
 broadcast_recv(struct broadcast_conn *c, const rimeaddr_t *from)
@@ -205,10 +247,16 @@ static void uart_rx_callback(unsigned char c) {
   if(c == '\n' || c == EOF){ 
    printf("received line: %s", (char *)rx_buf);
    packetbuf_clear();
+   rx_buf[strcspn ( rx_buf, "\n" )] = '\0';
    packetbuf_copyfrom(rx_buf, strlen(rx_buf));
-   broadcast_send(&options_broadcast);
-    memset(rx_buf, 0, rx_buf_index); 
-    rx_buf_index = 0; 
+   //Send the option to all the child nodes
+   int j;
+   for(j = 0; j < number_children; j++) {
+		runicast_send(&options_runicast, &children[j].addr, MAX_RETRANSMISSIONS);
+   }
+   //broadcast_send(&options_broadcast);
+   memset(rx_buf, 0, rx_buf_index); 
+   rx_buf_index = 0; 
   }else{ 
     rx_buf_index = rx_buf_index + 1; 
   } 
@@ -229,9 +277,9 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	// 
 	
 	PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
-	PROCESS_EXITHANDLER(broadcast_close(&options_broadcast_call);)
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_EXITHANDLER(runicast_close(&sensor_runicast);)
+	PROCESS_EXITHANDLER(runicast_close(&options_runicast);)
 	PROCESS_BEGIN();
 
 	me.addr.u8[0] = rimeaddr_node_addr.u8[0];
@@ -240,11 +288,11 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 
 	runicast_open(&runicast, 144, &runicast_callbacks);
 	runicast_open(&sensor_runicast, 154, &options_runicast_callbacks);
+	runicast_open(&options_runicast, 164, &options_runicast_callbacks);
 
 	static struct etimer et;
 
 	broadcast_open(&broadcast, 129, &broadcast_call);
-	broadcast_open(&options_broadcast, 139, &options_broadcast_call);
 
 	uart0_init(BAUD2UBR(115200)); //set the baud rate as necessary 
   	uart0_set_input(uart_rx_callback); //set the callback function for serial input
