@@ -37,17 +37,20 @@ public class ClientSocket {
 				@Override
 				public void run() {
 					try {
-						DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-						BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+						
+						//DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+						Writer out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())); 
+						//BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 						Scanner scanner = new Scanner(System.in);
 						while (true) {
 
 							System.out.println("Enter your username: ");
 							String msg = scanner.nextLine();
-							System.out.println("Your username is " + msg);
-							out.writeChars(msg);
-							out.flush();
-							out.writeUTF(msg);
+							//out.writeChars(msg);
+							//out.flush();
+							//out.writeInt((int)msg);
+							//out.write((int)msg);
+							out.write(msg+"\n");
 							out.flush();
 						}
 

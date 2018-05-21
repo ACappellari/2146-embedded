@@ -198,6 +198,10 @@ static char rx_buf[SERIAL_BUF_SIZE];
 static int rx_buf_index; 
 static void uart_rx_callback(unsigned char c) { 
   rx_buf[rx_buf_index] = c;      
+	//printf("received %s\n", c);
+    //memset(rx_buf, 0, rx_buf_index); 
+    //rx_buf_index = 0; 
+	//printf("buf index : %d\n", rx_buf_index);
   if(c == '\n' || c == EOF){ 
    printf("received line: %s", (char *)rx_buf);
    packetbuf_clear();
