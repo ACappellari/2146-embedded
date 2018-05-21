@@ -140,7 +140,7 @@ sensor_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t se
 	 from->u8[0], from->u8[1], seqno);
   uint16_t CHAN = packetbuf_attr(PACKETBUF_ATTR_CHANNEL);
   char * s_payload = (char *) packetbuf_dataptr();
-  printf("SENSOR PACKET RECEIVED : %s\n", s_payload);
+  printf("%s\n", s_payload);
 
 }
 
@@ -247,10 +247,11 @@ static struct broadcast_conn broadcast;
 static char rx_buf[SERIAL_BUF_SIZE]; 
 static int rx_buf_index; 
 static void uart_rx_callback(unsigned char c) { 
-  rx_buf[rx_buf_index] = c;      
-
-  if(c == '\n' || c == EOF){ 
-   printf("received line: %s", (char *)rx_buf);
+	if(c != '\n'){
+		rx_buf[rx_buf_index] = c;
+	}  
+  if(c == '\n' || c == EOF || c == '\0'){ 
+   printf("%s\n", (char *)rx_buf);
    packetbuf_clear();
    rx_buf[strcspn ( rx_buf, "\n" )] = '\0';
    packetbuf_copyfrom(rx_buf, strlen(rx_buf));

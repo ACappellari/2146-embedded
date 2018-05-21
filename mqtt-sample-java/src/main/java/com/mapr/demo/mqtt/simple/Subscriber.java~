@@ -10,7 +10,7 @@ public class Subscriber {
     System.out.println("== START SUBSCRIBER ==");
 
     MqttClient client=new MqttClient("tcp://localhost:1883", MqttClient.generateClientId());
-    client.setCallback( new SimpleMqttCallBack() );
+    client.setCallback( new SimpleMqttCallBack(null) );
     client.connect();
 
     client.subscribe("temperature");

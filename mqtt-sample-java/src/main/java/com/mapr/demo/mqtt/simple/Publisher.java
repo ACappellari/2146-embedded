@@ -12,6 +12,10 @@ import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
+import java.net.*;
+import java.util.Scanner;
+import java.io.*;
+
 public class Publisher extends Thread {
 
 	private ServerSocket serverSocket;
@@ -56,14 +60,9 @@ public class Publisher extends Thread {
 					
 					String clientmsg = in.readLine();
 					System.out.println(clientmsg);
-
-						mqttPublish(clientmsg);
-	
-					
+					mqttPublish(clientmsg);
 					out.println("Thank you");
-				}
-
-				catch (IOException || MqttException s) {
+				}catch (IOException | MqttException s) {
 					System.out.println("Socket timed out!");
 					s.printStackTrace();
 					break;

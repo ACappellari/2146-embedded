@@ -56,27 +56,13 @@ public class Publisher extends Thread {
 					
 					String clientmsg = in.readLine();
 					System.out.println(clientmsg);
-
-						mqttPublish(clientmsg);
-	
-					
+					mqttPublish(clientmsg);
 					out.println("Thank you");
-				}
-
-				catch (SocketTimeoutException s) {
+				}catch (IOException | MqttException s) {
 					System.out.println("Socket timed out!");
 					s.printStackTrace();
 					break;
 				}
-
-				catch (IOException e) {
-					e.printStackTrace();
-					break;
-				}
-				catch (MqttException e) {
-						System.out.println("Mqtt publish failed");
-						e.printStackTrace();
-					}
 
 
 			}

@@ -7,23 +7,32 @@ public class ClientSocket {
 	public static void main(String[] args) {
 		String hostname = "localhost";
 		int port = 60001;
-
 		try {
 			final Socket socket = new Socket(hostname, port);
+			final MqttClient client = new MqttClient("tcp://localhost:1883", MqttClient.generateClientId());
+			client.connect();
+
+
 			Thread receiver = new Thread(new Runnable() {
 
 				@Override
 				public void run() {
+										
 					InputStream input = null;
 					try {
 						input = socket.getInputStream();
 						InputStreamReader reader = new InputStreamReader(input);
 						int character;
-						StringBuilder data = new StringBuilder();
-						while ((character = reader.read()) != -1) {
-							data.append((char) character);
+						while(true){						
+							StringBuilder data = new StringBuilder();
+							while ((character = reader.read()) != -1 && character != '\n') {
+								data.append((char) character);
+							}
+							if(data.equals("64")){
+								System.out.println("Data : "+data);
+								mqttPublish(clientmsg);
+							}
 						}
-						System.out.println(data);
 					} catch (IOException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -37,20 +46,11 @@ public class ClientSocket {
 				@Override
 				public void run() {
 					try {
-						
-						//DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 						Writer out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())); 
-						//BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 						Scanner scanner = new Scanner(System.in);
 						while (true) {
-
-							System.out.println("Enter your username: ");
 							String msg = scanner.nextLine();
-							//out.writeChars(msg);
-							//out.flush();
-							//out.writeInt((int)msg);
-							//out.write((int)msg);
-							out.write(msg+"\n");
+							out.write(msg+"\0");
 							out.flush();
 						}
 
@@ -70,5 +70,14 @@ public class ClientSocket {
 			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
+	}
+
+	public void mqttPublish(String message) throws MqttException {
+		System.out.println("== START PUBLISHER ==");
+		MqttMessage mqttMessage = new MqttMessage();
+		mqttMessage.setPayload(message.getBytes());
+		client.publish("temperature", mqttMessage);
+		System.out.println("\tMessage '" + message + "' to 'temperature'");
+
 	}
 }
