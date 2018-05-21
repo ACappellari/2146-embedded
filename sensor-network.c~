@@ -1,70 +1,81 @@
+/**
+ * \file
+ *         Sensor node implementation, for the "IOT network using Rime" project of the "LINGI2146 - Mobile and Embedded Computing"
+ *         course. UCL 2017-2018.
+ * \author
+ *         Daubry Benjamin <benjamin.daubry@student.uclouvain.be>
+ *         Dizier Romain <romain.dizier@student.uclouvain.be>
+ *         Lovisetto Gary <gary.lovisetto@student.uclouvain.be>
+ */
+
 #include "contiki.h"
 #include "net/rime.h"
 #include "random.h"
-
 #include "lib/list.h"
 #include "lib/memb.h"
-
 #include <stdio.h>
 #include <stdlib.h>
-
-/* Data sensors */
-//TEMPERATURE AND HUMIDITY
 #include "dev/sht11.h"
-//LIGHT
 #include "dev/i2cmaster.h"
 #include "dev/light-ziglet.h"
 
-
+/* CONSTANTS */
 #define MAX_RETRANSMISSIONS 16
 #define NUM_HISTORY_ENTRIES 4
-#define USE_RSSI 0
-#define ACK_CHILD -42
-#define MAX_CHILDREN 10
-
-#define TYPE_SENSOR 0
+#define USE_RSSI 0 //Whether or not we use number of hops or RSSI to chose parent
+#define ACK_CHILD -42 //Value used to identify an aknowledgment from a child node
+#define MAX_CHILDREN 10 //Maximum number of entries in the table of children per node
+#define TYPE_SENSOR 0 //Type of data collected by the sensor node : 0=temperature, 1=humidity, 2=light
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network_process, "Sensor network implementation");
 AUTOSTART_PROCESSES(&sensor_network_process);
 /*---------------------------------------------------------------------------*/
 				/*Forward declaration */
+
+//Structure used to model a routing packet
 struct response_packet ; 
 typedef struct response_packet{
 	uint8_t id;
 	uint8_t nb_hops;
 } response;
 
+//Structure used to model a node
 struct node_unicast;
 typedef struct node_unicast{
 	rimeaddr_t addr;
 	uint8_t nb_hops;
-	int16_t rssi; //Signed because can be negative
+	int16_t rssi;
 } node;
 
+//Each node store its own values as well as its parent values
 node parent;
 node me;
 
+//Structure used to model sensor data produced by a sensor node
 struct sensor_data;
 typedef struct sensor_data{
 	uint16_t value;
 	char* type;
 } sensor_data;
 
+//Each node stores its sensor data
 sensor_data s_data;
 
+//Structure used to model a child node
 struct tuple_child;
 typedef struct tuple_child{
 	rimeaddr_t addr;
 } tuple_child;
 
+//Each node stores an array containing the address of its children
 tuple_child children[MAX_CHILDREN];
 static number_children = 0;
 
 /* Options for the behaviour of the sensor node :
    - 0 : the node sends data periodically (every x seconds)
    - 1 : the node sends data when there is a change
-   - 2 : the node sends data only when there is at least one subscriber to the topic
+   - 2 : the node does not sends data since there are no subscribers for its subject.
 */
 uint8_t option_sensor_data = 0;
 
@@ -78,10 +89,15 @@ static struct runicast_conn options_runicast;
 /*---------------------------------------------------------------------------*/
 			/*RELAY SENSOR DATA TO ROOT*/
 
+/*
+ * Function used to send data values coming from another node (down) towards to root node (up).
+ * \parameter : the string representation of the data to be relayed.
+ */
 static void
 relay_sensor_data(char * s_payload)
 {
 	printf("MESSAGE TO RELAY : %s\n", s_payload);
+	/* Waits for the connection to be available */
 	while(runicast_is_transmitting(&sensor_runicast)){}
 	/* Create the sensor packet */
 	packetbuf_clear();
@@ -91,7 +107,6 @@ relay_sensor_data(char * s_payload)
 	printf("THIS IS PACKET CONTENT %s\n", buf);
 	packetbuf_copyfrom(&buf, strlen(buf));
 	/* Then sends it */
-
 	runicast_send(&sensor_runicast, &parent.addr, MAX_RETRANSMISSIONS);
 	packetbuf_clear();
 	printf("I HAVE SENT SENSORS DATA AGAIN\n");
@@ -101,10 +116,15 @@ relay_sensor_data(char * s_payload)
 /*---------------------------------------------------------------------------*/
 			/*RELAY OPTIONS TO CHILD NODES*/
 
+/*
+ * Function used to send the option value coming from another node (up) towards child nodes (down).
+ * \parameter : the string representation of the option to be relayed.
+ */
 static void
 relay_options_data(char * s_payload)
 {
 	printf("MESSAGE TO RELAY : %s\n", s_payload);
+	/* Waits for the connection to be available */
 	while(runicast_is_transmitting(&options_runicast)){}
 	/* Create the sensor packet */
 	int len = strlen(s_payload);
@@ -124,6 +144,10 @@ relay_options_data(char * s_payload)
 
 /*---------------------------------------------------------------------------*/
 			/* SEND CHILD UNICAST */
+
+/*
+ * Function used to send an acknowledgment towards the newly accepted parent of the node.
+ */
 static void
 send_child_confirmation()
 {
@@ -142,19 +166,26 @@ send_child_confirmation()
 
 }
 
+/*
+ * Function used to verify that a given node is not already in the list of child of the node.
+ * \parameter : a tuple_child structure representing a node.
+ */
 static int
 verify_children(tuple_child t){
 	int isIn = 0;
 	int j;
 	for(j = 0; j < number_children; j++) {
 		if(children[j].addr.u8[0] == t.addr.u8[0] && children[j].addr.u8[1] == t.addr.u8[1]){
-			//isIn = 1;
 			return j;
 		}
 	}
 	return isIn;
 }
 
+/*
+ * Function used to remove a child node from the array of known child by shifting the whole array from its index.
+ * \parameter : the index of the child to remove.
+ */
 void removeChild(int index)
 {
 	int i;
@@ -166,16 +197,15 @@ void removeChild(int index)
 }
 /*---------------------------------------------------------------------------*/
 			/* UNICAST ROUTING PACKETS */
+
 static void
 recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t seqno)
 {
   printf("runicast message received from %d.%d, seqno %d\n",
 	 from->u8[0], from->u8[1], seqno);
 
-
 	//Received a response from my broadcast, should compare number of hops and override
 	uint16_t last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-	//printf("RSSI : %d\n", last_rssi);
 	char * payload = (char *) packetbuf_dataptr();
 	printf("Payload received : %s\n", payload);
 	uint8_t nb_hop = (uint8_t) atoi(payload);
@@ -264,8 +294,6 @@ sensor_recv_runicast(struct runicast_conn *c, const rimeaddr_t *from, uint8_t se
 
 	char * s_payload = (char *) packetbuf_dataptr();
 	printf("SENSOR PACKET RECEIVED : %s\n", s_payload);
-	//char * payload = (char *)  packetbuf_dataptr();
-	//printf("Payload received : %s\n", payload);
 	// Then sends it to its parent node until it reaches the root
 	relay_sensor_data(s_payload);
 		
@@ -377,14 +405,12 @@ static struct broadcast_conn broadcast;
 /*---------------------------------------------------------------------------*/
 			/* SEND SENSOR DATA */
 
+/*
+ * Function used to send data values coming from this node (down) towards its parent node (up).
+ */
 static void
 send_sensor_data()
 {
-	/* Set the original receiver of the packet to the root node */
-	//rimeaddr_t *root;
-	//root->u8[0] = 0;
-	//root->u8[1] = 0;
-	//packetbuf_set_addr(PACKETBUF_ADDR_ERECEIVER, root);
 	/* Wait for the runicast channel to be available*/
 	while(runicast_is_transmitting(&sensor_runicast)){}
 	/* Create the sensor packet */
@@ -404,15 +430,7 @@ send_sensor_data()
 
 
 /*---------------------------------------------------------------------------*/
-
-// void 	broadcast_open (struct broadcast_conn *c, uint16_t channel, const struct broadcast_callbacks *u)
-// void 	broadcast_close (struct broadcast_conn *c)
-// int 		broadcast_send (struct broadcast_conn *c)
-
-// void 	runicast_open(struct runicast_conn *c, uint16_t channel, const struct runicast_callbacks *u)
-// void		runicast_close(struct runicast_conn *c)
-// int 		runicast_send(struct runicast_conn *c, const rimeaddr_t *receiver, uint8_t max_retransmissions)
-
+			/* PROCESS THREAD */
 
 PROCESS_THREAD(sensor_network_process, ev, data)
 {
@@ -447,8 +465,7 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	broadcast_open(&broadcast, 129, &broadcast_call); //Broadcast routing channel
 
 	BROADCAST:while(parent.addr.u8[0] == 0 && parent.addr.u8[1] == 0) {
-		//printf("LOOP start\n");
-		/* Delay 2-4 seconds */
+		/* Delay */
 		etimer_set(&et, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 16));
 
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
