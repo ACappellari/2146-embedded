@@ -10,10 +10,10 @@ public class ClientSocket {
 
 		try {
 			final Socket socket = new Socket(hostname, port);
-			Thread receiver = new Thread(new Runnable() {
+			//Thread receiver = new Thread(new Runnable() {
 
-				@Override
-				public void run() {
+				//@Override
+				//public void run() {
 					InputStream input = null;
 					try {
 						input = socket.getInputStream();
@@ -29,8 +29,8 @@ public class ClientSocket {
 						e.printStackTrace();
 					}
 
-				}
-			});
+				//}
+			//});
 
 			Thread sender = new Thread(new Runnable() {
 
@@ -50,7 +50,7 @@ public class ClientSocket {
 							//out.flush();
 							//out.writeInt((int)msg);
 							//out.write((int)msg);
-							out.write(msg);
+							out.write(msg+"\n");
 							out.flush();
 						}
 
@@ -61,7 +61,7 @@ public class ClientSocket {
 				}
 			});
 
-			receiver.start();
+			//receiver.start();
 			sender.start();
 		} catch (UnknownHostException e1) {
 			// TODO Auto-generated catch block

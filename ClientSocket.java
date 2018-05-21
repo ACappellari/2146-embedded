@@ -32,10 +32,10 @@ public class ClientSocket {
 				}
 			});
 
-			Thread sender = new Thread(new Runnable() {
+			//Thread sender = new Thread(new Runnable() {
 
-				@Override
-				public void run() {
+				//@Override
+				//public void run() {
 					try {
 						
 						//DataOutputStream out = new DataOutputStream(socket.getOutputStream());
@@ -58,11 +58,11 @@ public class ClientSocket {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
-				}
-			});
+				//}
+			//});
 
 			receiver.start();
-			sender.start();
+			//sender.start();
 		} catch (UnknownHostException e1) {
 			// TODO Auto-generated catch block
 			e1.printStackTrace();
