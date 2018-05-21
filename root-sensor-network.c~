@@ -245,7 +245,7 @@ static void uart_rx_callback(unsigned char c) {
     //rx_buf_index = 0; 
 	//printf("buf index : %d\n", rx_buf_index);
   if(c == '\n' || c == EOF){ 
-   printf("received line: %s\n", (char *)rx_buf);
+   printf("received line: %s", (char *)rx_buf);
    packetbuf_clear();
    rx_buf[strcspn ( rx_buf, "\n" )] = '\0';
    packetbuf_copyfrom(rx_buf, strlen(rx_buf));
@@ -289,6 +289,10 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	runicast_open(&runicast, 144, &runicast_callbacks);
 	runicast_open(&sensor_runicast, 154, &options_runicast_callbacks);
 	runicast_open(&options_runicast, 164, &options_runicast_callbacks);
+
+	/* OPTIONAL: Sender history */
+  	list_init(history_table);
+  	memb_init(&history_mem);
 
 	static struct etimer et;
 

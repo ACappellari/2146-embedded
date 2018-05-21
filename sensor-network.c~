@@ -22,10 +22,7 @@
 #define ACK_CHILD -42
 #define MAX_CHILDREN 10
 
-#define OPTION_TEMP 1
-#define OPTION_HUMIDITY 0
-#define OPTION_LIGHT 0
-
+#define TYPE_SENSOR 0
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network_process, "Sensor network implementation");
@@ -64,6 +61,11 @@ typedef struct tuple_child{
 tuple_child children[MAX_CHILDREN];
 static number_children = 0;
 
+/* Options for the behaviour of the sensor node :
+   - 0 : the node sends data periodically (every x seconds)
+   - 1 : the node sends data when there is a change
+   - 2 : the node sends data only when there is at least one subscriber to the topic
+*/
 uint8_t option_sensor_data = 0;
 
 // Unicast connection for routing
@@ -459,35 +461,78 @@ PROCESS_THREAD(sensor_network_process, ev, data)
 	while(parent.addr.u8[0] != 0)
 	{
 		
-		//PROCESS_YIELD();
-		etimer_set(&et_data, CLOCK_SECOND * 8 + random_rand() % (CLOCK_SECOND * 8));
-		//for (etimer_set(&et_data, CLOCK_SECOND);; etimer_reset(&et_data)) {
+		etimer_set(&et_data, CLOCK_SECOND * 2 + random_rand() % (CLOCK_SECOND * 8));
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et_data));
 		
-		    /* TEMPERATURE */
-		    s_data.type = "./temperature";
-		    s_data.value = (unsigned) (-39.60 + 0.01 * sht11_temp());
-		    //printf("TYPE : %s\n", s_data.type);
-		    //printf("VALUE : %u\n", s_data.value);
+		/* TEMPERATURE */
+		if(TYPE_SENSOR == 0){
+			s_data.type = "./temperature";
+			if(option_sensor_data == 0){
+				s_data.value = (unsigned) (-39.60 + 0.01 * sht11_temp());
+				send_sensor_data();
+			}
+			else if(option_sensor_data == 1){
+				uint16_t tempvalue = (unsigned) (-39.60 + 0.01 * sht11_temp());
+				if(s_data.value != tempvalue){
+					s_data.value = tempvalue;
+					send_sensor_data();
+				}
+			}
+			else if(option_sensor_data == 2){
+				/*Does nothing, there is no subscribers */
+			}
+			else{
+				printf("Unknown sensor option value");
+			}
+		}
 
-		    /* HUMIDITY */		  
-		    //rh = sht11_humidity();
-		    //s_data.type = "./humidity";
-		    //s_data.value = (unsigned) (-4 + 0.0405*rh - 2.8e-6*(rh*rh));
-		    //printf("TYPE : %s\n", s_data.type);
-		    //printf("VALUE : %u\n", s_data.value);
+		/* HUMIDITY */
+		if(TYPE_SENSOR == 1){		  
+			rh = sht11_humidity();
+			s_data.type = "./humidity";
+			if(option_sensor_data == 0){
+				s_data.value = (unsigned) (-4 + 0.0405*rh - 2.8e-6*(rh*rh));
+				send_sensor_data();
+			}
+			else if(option_sensor_data == 1){
+				uint16_t tempvalue = (unsigned) (-4 + 0.0405*rh - 2.8e-6*(rh*rh));
+				if(s_data.value != tempvalue){
+					s_data.value = tempvalue;
+					send_sensor_data();
+				}
+			}
+			else if(option_sensor_data == 2){
+				/*Does nothing, there is no subscribers */
+			}
+			else{
+				printf("Unknown sensor option value");
+			}
+		}
 
-		    /* LIGHT */
-		    //light = (unsigned) light_ziglet_read();
-		    //s_data.type = "./light";
-		    //s_data.value = (unsigned) light;
-		    //printf("TYPE : %s\n", s_data.type);
-		    //printf("VALUE : %u\n", s_data.value);
-			
-		    send_sensor_data();
-			
-		  //}
-	
+		if(TYPE_SENSOR == 2){
+			/* LIGHT */
+			s_data.type = "./light";
+
+			if(option_sensor_data == 0){
+				light = (unsigned) light_ziglet_read();
+				s_data.value = (unsigned) light;
+				send_sensor_data();
+			}
+			else if(option_sensor_data == 1){
+				light = (unsigned) light_ziglet_read();
+				uint16_t tempvalue = (unsigned) light;
+				if(s_data.value != tempvalue){
+					s_data.value = tempvalue;
+					send_sensor_data();
+				}
+			}
+			else if(option_sensor_data == 2){
+				/*Does nothing, there is no subscribers */
+			}
+			else{
+				printf("Unknown sensor option value");
+			}	
+		}
 	}
 	
 	
