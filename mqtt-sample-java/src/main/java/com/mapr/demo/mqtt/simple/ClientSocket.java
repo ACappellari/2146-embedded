@@ -26,12 +26,16 @@ public class ClientSocket {
 
 	public static void setup(String hostname, int port) {
 		try {
+			// Setup the socket to communicate with the root node
 			final Socket socket = new Socket(hostname, port);
+			// Setup the client to communicate with mosquitto
 			final MqttClient client = new MqttClient("tcp://localhost:1883", MqttClient.generateClientId());
+			// Setup the callback to subscribe to changes to the number of subscriber
     			client.setCallback( new SimpleMqttCallBack(socket) );
 			client.connect();
 			client.subscribe("$SYS/broker/subscriptions/count");
 			
+			// Thread listening for the sensor data from the root
 			Thread receiver = new Thread(new Runnable() {
 
 				@Override
@@ -43,11 +47,13 @@ public class ClientSocket {
 						InputStreamReader reader = new InputStreamReader(input);
 						int character;
 						while (true) {
+							// Create a string based on the message received from the root
 							StringBuilder data = new StringBuilder();
 							while ((character = reader.read()) != -1 && character != '\n' && character != '\0') {
 								data.append((char) character);
 							}
 							String msg = data.toString();
+							// Check if the message received is a sensor data
 							if (msg.contains("./")) {
 								String[] split = msg.split(" |./");
 								String topic = split[1];
@@ -62,7 +68,8 @@ public class ClientSocket {
 
 				}
 			});
-
+			
+			// Thread reading the user input in the terminal and sending it to the root
 			Thread sender = new Thread(new Runnable() {
 
 				@Override
@@ -96,6 +103,7 @@ public class ClientSocket {
 		}
 	}
 
+	// Method to publish an mqtt message to mosquitto
 	public static void mqttPublish(MqttClient client, String topic, String value) throws MqttException {
 		System.out.println("== START PUBLISHER ==");
 		System.out.println(topic + " "+ value);

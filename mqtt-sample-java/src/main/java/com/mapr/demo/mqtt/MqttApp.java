@@ -3,11 +3,10 @@ package com.mapr.demo.mqtt;
 import org.eclipse.paho.client.mqttv3.MqttException;
 
 import com.mapr.demo.mqtt.simple.ClientSocket;
-import com.mapr.demo.mqtt.simple.Publisher;
 import com.mapr.demo.mqtt.simple.Subscriber;
 
 /**
- * Basic launcher for Publisher and Subscriber
+ * Basic launcher for Gateway and Subscriber
  */
 public class MqttApp {
 
@@ -17,9 +16,6 @@ public class MqttApp {
       throw new IllegalArgumentException("Must have either 'publisher', 'subscriber' or 'gateway' as argument");
     }
     switch (args[0]) {
-      case "publisher":
-        Publisher.main(args);
-        break;
       case "subscriber":
         Subscriber.main(args);
         break;

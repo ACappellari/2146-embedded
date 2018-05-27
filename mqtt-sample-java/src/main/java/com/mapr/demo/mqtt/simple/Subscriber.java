@@ -14,6 +14,8 @@ public class Subscriber {
     client.connect();
 
     client.subscribe("temperature");
+    client.subscribe("light");
+    client.subscribe("humidity");
 
   }
 
