@@ -28,7 +28,7 @@ public class ClientSocket {
 		try {
 			final Socket socket = new Socket(hostname, port);
 			final MqttClient client = new MqttClient("tcp://localhost:1883", MqttClient.generateClientId());
-    			client.setCallback( new SimpleMqttCallBack() );
+    			client.setCallback( new SimpleMqttCallBack(socket) );
 			client.connect();
 			client.subscribe("$SYS/broker/subscriptions/count");
 			
@@ -100,7 +100,7 @@ public class ClientSocket {
 		System.out.println("== START PUBLISHER ==");
 		System.out.println(topic + " "+ value);
 		MqttMessage mqttMessage = new MqttMessage();
-		mqttMessage.setPayload(value.getBytes());
+		mqttMessage.setPayload("15".getBytes());
 		client.publish(topic, mqttMessage);
 		System.out.println("\tMessage '" + value + "' to "+topic);
 

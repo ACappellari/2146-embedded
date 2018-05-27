@@ -13,9 +13,11 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 
 public class SimpleMqttCallBack implements MqttCallback {
 	Socket socket;
+	boolean gateway;
 
 	public SimpleMqttCallBack(Socket socket) {
 		this.socket = socket;
+		this.gateway = true;
 	}
 
 	public SimpleMqttCallBack() {
@@ -26,12 +28,20 @@ public class SimpleMqttCallBack implements MqttCallback {
 	}
 
 	public void messageArrived(String s, MqttMessage mqttMessage) throws Exception {
+		
+		if (!gateway){
+			System.out.println("Message received:\t"+ new String(mqttMessage.getPayload()) );
+			return;
+		}
 		try {
 			Writer out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
 			Scanner scanner = new Scanner(System.in);
 			String msg = new String(mqttMessage.getPayload());
 			if(Integer.parseInt(msg) <= 1){
 				out.write(2 + "\0");
+				out.flush();
+			}else{
+				out.write(0 + "\0");
 				out.flush();
 			}
 
